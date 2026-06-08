@@ -117,4 +117,33 @@ R.reduce = H.def(function(arr, fn, init)
   return acc
 end, 2, 3)
 
+-- $single(array[, function]): return the one element matching the predicate
+-- (missing predicate = always match). D3138 if >1 match, D3139 if none.
+R.single = H.def(function(arr, fn)
+  if V.is_nothing(arr) then
+    return V.NOTHING
+  end
+  arr = to_array(arr)
+  local found = false
+  local result = V.NOTHING
+  for i = 1, #arr do
+    local positive = true
+    if fn ~= nil then
+      positive = H.truthy(apply(fn, hof_args(fn, arr[i], i - 1, arr)))
+    end
+    if positive then
+      if not found then
+        result = arr[i]
+        found = true
+      else
+        errors.raise("D3138")
+      end
+    end
+  end
+  if not found then
+    errors.raise("D3139")
+  end
+  return result
+end, 1, 2)
+
 return R
