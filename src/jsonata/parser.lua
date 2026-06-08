@@ -298,6 +298,60 @@ do
   end
 end
 
+-- Placeholder for partial application (? in prefix/argument position).
+symbols["?"].nud = function(p, t)
+  return { type = "placeholder", position = t.position }
+end
+
+-- Lambda: function ( $a, $b ) { body }
+do
+  local s = symbol("function", 0)
+  s.nud = function(p, t)
+    if p.node.id ~= "(" then
+      errors.raise("S0203", { position = p.node.position, token = "(" })
+    end
+    p.advance() -- consume '('
+    local params = {}
+    if p.node.id ~= ")" then
+      while true do
+        if p.node.type ~= "variable" then
+          errors.raise("S0203", { position = p.node.position, token = tostring(p.node.value) })
+        end
+        params[#params + 1] = p.node.value
+        p.advance()
+        if p.node.id == "," then
+          p.advance()
+        else
+          break
+        end
+      end
+    end
+    if p.node.id ~= ")" then
+      errors.raise("S0203", { position = p.node.position, token = ")" })
+    end
+    p.advance() -- consume ')'
+    if p.node.id ~= "{" then
+      errors.raise("S0203", { position = p.node.position, token = "{" })
+    end
+    p.advance() -- consume '{'
+    local body = p.expression(0)
+    if p.node.id ~= "}" then
+      errors.raise("S0203", { position = p.node.position, token = "}" })
+    end
+    p.advance() -- consume '}'
+    return { type = "lambda", params = params, body = body, position = t.position }
+  end
+end
+
+-- Apply / chain operator. RHS is kept as AST: its call-shape decides whether
+-- the LHS is prepended as the first argument (evaluated in the evaluator).
+do
+  local s = symbol("~>", 40)
+  s.led = function(p, t, left)
+    return { type = "apply", lhs = left, rhs = p.expression(40), position = t.position }
+  end
+end
+
 function M.parse(source)
   local p = make_parser(source)
   p.advance()
@@ -378,6 +432,15 @@ function M.process_ast(ast)
     for i, a in ipairs(ast.arguments) do
       ast.arguments[i] = M.process_ast(a)
     end
+    return ast
+  end
+  if ast.type == "lambda" then
+    ast.body = M.process_ast(ast.body)
+    return ast
+  end
+  if ast.type == "apply" then
+    ast.lhs = M.process_ast(ast.lhs)
+    ast.rhs = M.process_ast(ast.rhs)
     return ast
   end
   return ast

@@ -134,3 +134,60 @@ describe("evaluator: constructors and function calls", function()
     assert.is_true(errs.is_error(err))
   end)
 end)
+
+describe("evaluator: lambdas", function()
+  it("defines and applies a lambda", function()
+    assert.are.equal(6, eval("function($x){ $x + 1 }(5)"))
+  end)
+
+  it("lambda bound to a variable", function()
+    assert.are.equal(7, eval("($double := function($x){ $x * 2 }; $double(3) + 1)"))
+  end)
+
+  it("lambda is a closure capturing its environment", function()
+    assert.are.equal(15, eval("($a := 10; function($x){ $x + $a })(5)"))
+  end)
+
+  it("missing lambda args bind to nothing", function()
+    local V = require("jsonata.value")
+    assert.is_true(V.is_nothing(eval("function($x){ $x }()")))
+  end)
+end)
+
+describe("evaluator: apply operator ~>", function()
+  it("applies a function to the LHS", function()
+    assert.are.equal("5", eval("5 ~> $string"))
+  end)
+
+  it("chains left to right", function()
+    assert.are.equal(1, eval("5 ~> $string ~> $length"))
+  end)
+
+  it("prepends the LHS as the first arg when RHS is a call", function()
+    assert.are.equal("he", eval([["hello" ~> $substring(0, 2)]]))
+  end)
+
+  it("applies a lambda via ~>", function()
+    assert.are.equal(6, eval("5 ~> function($x){ $x + 1 }"))
+  end)
+end)
+
+describe("evaluator: partial application", function()
+  it("partially applies with one hole", function()
+    assert.are.equal("he", eval([[($f := $substring(?, 0, 2); $f("hello"))]]))
+  end)
+
+  it("partially applies with multiple holes", function()
+    assert.are.equal("ell", eval([[($f := $substring("hello", ?, ?); $f(1, 3))]]))
+  end)
+end)
+
+describe("evaluator: lambda as a first-class value", function()
+  it("$type of a lambda is 'function'", function()
+    assert.are.equal("function", eval("$type(function($x){ $x })"))
+  end)
+
+  it("$string of a lambda is empty (no crash)", function()
+    assert.are.equal("", eval("$string(function($x){ $x })"))
+  end)
+end)

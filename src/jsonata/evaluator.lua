@@ -275,23 +275,89 @@ evaluate = function(node, input, env)
     return obj
   elseif t == "function" then
     return M.eval_function(node, input, env)
+  elseif t == "lambda" then
+    return { _jsonata_lambda = true, params = node.params, body = node.body, env = env, input = input }
+  elseif t == "apply" then
+    local lhs = evaluate(node.lhs, input, env)
+    local rhs = node.rhs
+    if rhs.type == "function" then
+      local proc = evaluate(rhs.procedure, input, env)
+      local args = { lhs }
+      for _, a in ipairs(rhs.arguments) do
+        args[#args + 1] = evaluate(a, input, env)
+      end
+      return M.apply(proc, args)
+    end
+    return M.apply(evaluate(rhs, input, env), { lhs })
   end
   errors.raise("D3001", { token = t })
 end
 
+-- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
+function M.apply(proc, args)
+  if type(proc) == "table" and proc._jsonata_lambda then
+    return M.apply_lambda(proc, args)
+  end
+  if type(proc) == "table" and proc._jsonata_function then
+    return proc.impl((table.unpack or unpack)(args, 1, #args))
+  end
+  errors.raise("T1006", { value = proc })
+end
+
+function M.apply_lambda(proc, args)
+  local frame = proc.env:create_frame()
+  for i, name in ipairs(proc.params) do
+    local v = args[i]
+    if v == nil then
+      v = V.NOTHING
+    end
+    frame:bind(name, v)
+  end
+  return evaluate(proc.body, proc.input, frame)
+end
+
 function M.eval_function(node, input, env)
   local proc = evaluate(node.procedure, input, env)
-  if type(proc) ~= "table" or not proc._jsonata_function then
-    errors.raise("T1006", { value = proc })
+  for _, a in ipairs(node.arguments) do
+    if a.type == "placeholder" then
+      return M.partial(proc, node.arguments, input, env)
+    end
   end
   local args = {}
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
   end
-  if proc.arity and #args ~= proc.arity then
-    errors.raise("T0410", { value = #args })
+  return M.apply(proc, args)
+end
+
+-- Partial application: $f(?, x) -> a new function that fills the holes when applied.
+function M.partial(proc, argnodes, input, env)
+  if not (type(proc) == "table" and (proc._jsonata_lambda or proc._jsonata_function)) then
+    errors.raise("T1006", { value = proc })
   end
-  return proc.impl((table.unpack or unpack)(args))
+  local bound = {}
+  local holes = {}
+  for i, a in ipairs(argnodes) do
+    if a.type == "placeholder" then
+      holes[#holes + 1] = i
+    else
+      bound[i] = evaluate(a, input, env)
+    end
+  end
+  return {
+    _jsonata_function = true,
+    impl = function(...)
+      local fill = { ... }
+      local args = {}
+      for i = 1, #argnodes do
+        args[i] = bound[i]
+      end
+      for k, pos in ipairs(holes) do
+        args[pos] = fill[k]
+      end
+      return M.apply(proc, args)
+    end,
+  }
 end
 
 M.evaluate = evaluate

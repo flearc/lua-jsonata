@@ -11,6 +11,7 @@ local KEYWORDS = {
   ["and"] = true,
   ["or"] = true,
   ["in"] = true,
+  ["function"] = true,
 }
 
 -- Multi-character operators, longest first.
