@@ -61,7 +61,7 @@ R.length = H.def(function(s)
   return H.utf8_len(s)
 end, 1)
 
-R.substring = H.def_max(function(s, start, length)
+R.substring = H.def(function(s, start, length)
   if not require_string(s, "substring", 1) then
     return V.NOTHING
   end
@@ -84,7 +84,7 @@ R.substring = H.def_max(function(s, start, length)
     out[#out + 1] = chars[i]
   end
   return table.concat(out)
-end, 3)
+end, 2, 3)
 
 R.substringBefore = H.def(function(s, pattern)
   if not require_string(s, "substringBefore", 1) then
@@ -154,7 +154,7 @@ R.pad = H.def(function(s, width, char)
     return padding .. s
   end
   return s .. padding
-end, nil)
+end, 2, 3)
 
 R.contains = H.def(function(s, sub)
   if not require_string(s, "contains", 1) then
@@ -204,7 +204,7 @@ R.split = H.def(function(s, sep, limit)
     return trimmed
   end
   return result
-end, nil)
+end, 2, 3)
 
 R.join = H.def(function(arr, sep)
   if nothing_guard(arr) then
@@ -228,7 +228,7 @@ R.join = H.def(function(arr, sep)
     parts[i] = arr[i]
   end
   return table.concat(parts, sep)
-end, nil)
+end, 1, 2)
 
 -- Percent-encode every byte not in `unreserved`.
 local function percent_encode(s, unreserved)
