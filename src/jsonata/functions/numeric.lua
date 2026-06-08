@@ -80,7 +80,7 @@ R.round = H.def(function(x, precision)
     rounded = (floored % 2 == 0) and floored or floored + 1
   end
   return rounded / factor
-end, nil)
+end, 1, 2)
 
 R.power = H.def(function(base, exp)
   if num_guard(base) or num_guard(exp) then
@@ -123,6 +123,6 @@ R.formatBase = H.def(function(x, radix)
     s = "-" .. s
   end
   return s
-end, nil)
+end, 1, 2)
 
 return R

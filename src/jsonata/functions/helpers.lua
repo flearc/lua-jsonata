@@ -3,22 +3,22 @@ local errors = require("jsonata.errors")
 
 local H = {}
 
-function H.def(impl, arity)
-  return { _jsonata_function = true, impl = impl, arity = arity }
-end
-
--- Like H.def but enforces a maximum argument count internally (arity=nil so
--- the evaluator's exact-match check is skipped; the wrapper raises T0410 when
--- the caller passes more than max_arity arguments).
-function H.def_max(impl, max_arity)
-  local wrapped = function(...)
+-- def(impl)            -> any number of args
+-- def(impl, n)         -> exactly n          (max defaults to min)
+-- def(impl, min, max)  -> between min and max (inclusive)
+function H.def(impl, min, max)
+  if min == nil then
+    return { _jsonata_function = true, impl = impl, arity = nil }
+  end
+  max = max or min
+  local checked = function(...)
     local n = select("#", ...)
-    if n > max_arity then
+    if n < min or n > max then
       errors.raise("T0410", { value = n })
     end
     return impl(...)
   end
-  return { _jsonata_function = true, impl = wrapped, arity = nil }
+  return { _jsonata_function = true, impl = checked, arity = nil }
 end
 
 -- JSONata truthiness (migrated unchanged from M1 functions.lua).

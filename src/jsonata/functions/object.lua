@@ -113,7 +113,7 @@ end, 1)
 
 R.error = H.def(function(msg)
   H.err("D3137", { message = V.is_nothing(msg) and "$error() function evaluated" or msg })
-end, 1)
+end, 0, 1)
 
 R.assert = H.def(function(cond, msg)
   if cond == nil or V.is_nothing(cond) or V.typeof(cond) ~= "boolean" then
@@ -123,6 +123,6 @@ R.assert = H.def(function(cond, msg)
     H.err("D3141", { message = V.is_nothing(msg) and "$assert() statement failed" or msg })
   end
   return V.NOTHING
-end, nil)
+end, 1, 2)
 
 return R
