@@ -19,7 +19,8 @@ local function to_string(x)
   elseif t == "number" then
     return H.num_to_str(x)
   end
-  H.err("D3001", { value = x, message = "$string of array/object not yet supported" })
+  -- arrays/objects: JSON serialization
+  return H.serialize(x)
 end
 R._to_string = to_string
 
