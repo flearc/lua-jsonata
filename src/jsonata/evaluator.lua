@@ -318,11 +318,46 @@ end
 
 function M.eval_function(node, input, env)
   local proc = evaluate(node.procedure, input, env)
+  for _, a in ipairs(node.arguments) do
+    if a.type == "placeholder" then
+      return M.partial(proc, node.arguments, input, env)
+    end
+  end
   local args = {}
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
   end
   return M.apply(proc, args)
+end
+
+-- Partial application: $f(?, x) -> a new function that fills the holes when applied.
+function M.partial(proc, argnodes, input, env)
+  if not (type(proc) == "table" and (proc._jsonata_lambda or proc._jsonata_function)) then
+    errors.raise("T1006", { value = proc })
+  end
+  local bound = {}
+  local holes = {}
+  for i, a in ipairs(argnodes) do
+    if a.type == "placeholder" then
+      holes[#holes + 1] = i
+    else
+      bound[i] = evaluate(a, input, env)
+    end
+  end
+  return {
+    _jsonata_function = true,
+    impl = function(...)
+      local fill = { ... }
+      local args = {}
+      for i = 1, #argnodes do
+        args[i] = bound[i]
+      end
+      for k, pos in ipairs(holes) do
+        args[pos] = fill[k]
+      end
+      return M.apply(proc, args)
+    end,
+  }
 end
 
 M.evaluate = evaluate

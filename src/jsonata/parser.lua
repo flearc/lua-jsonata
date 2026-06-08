@@ -298,6 +298,11 @@ do
   end
 end
 
+-- Placeholder for partial application (? in prefix/argument position).
+symbols["?"].nud = function(p, t)
+  return { type = "placeholder", position = t.position }
+end
+
 -- Lambda: function ( $a, $b ) { body }
 do
   local s = symbol("function", 0)

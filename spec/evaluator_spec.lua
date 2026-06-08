@@ -171,3 +171,13 @@ describe("evaluator: apply operator ~>", function()
     assert.are.equal(6, eval("5 ~> function($x){ $x + 1 }"))
   end)
 end)
+
+describe("evaluator: partial application", function()
+  it("partially applies with one hole", function()
+    assert.are.equal("he", eval([[($f := $substring(?, 0, 2); $f("hello"))]]))
+  end)
+
+  it("partially applies with multiple holes", function()
+    assert.are.equal("ell", eval([[($f := $substring("hello", ?, ?); $f(1, 3))]]))
+  end)
+end)
