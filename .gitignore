@@ -1,0 +1,21 @@
+# LuaRocks build artifacts
+*.rock
+*.src.rock
+.luarocks/
+lua_modules/
+luarocks/
+
+# Test / coverage output
+luacov.stats.out
+luacov.report.out
+*.out
+
+# Editor / OS cruft
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Local-only docs (design specs, plans, blog) — not published
+docs/
