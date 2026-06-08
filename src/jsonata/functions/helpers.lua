@@ -6,6 +6,9 @@ local H = {}
 -- def(impl)            -> any number of args
 -- def(impl, n)         -> exactly n          (max defaults to min)
 -- def(impl, min, max)  -> between min and max (inclusive)
+-- arity = number of REQUIRED args (= min); nil means unconstrained/variadic.
+-- Mirrors jsonata getFunctionArity (implementation.length). HOFs read this to
+-- decide how many of (value,index,array) to pass a callback.
 function H.def(impl, min, max)
   if min == nil then
     return { _jsonata_function = true, impl = impl, arity = nil }
@@ -18,11 +21,14 @@ function H.def(impl, min, max)
     end
     return impl(...)
   end
-  return { _jsonata_function = true, impl = checked, arity = nil }
+  return { _jsonata_function = true, impl = checked, arity = min }
 end
 
 -- JSONata truthiness (migrated unchanged from M1 functions.lua).
 local function truthy(x)
+  if type(x) == "table" and (x._jsonata_lambda or x._jsonata_function) then
+    return false
+  end
   if V.is_nothing(x) then
     return false
   end
