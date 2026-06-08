@@ -1,0 +1,42 @@
+local F = require("jsonata.functions")
+local V = require("jsonata.value")
+
+describe("string functions", function()
+  it("$length counts code points", function()
+    assert.are.equal(5, F.length.impl("hello"))
+    assert.are.equal(2, F.length.impl("€λ")) -- multibyte
+    assert.is_true(V.is_nothing(F.length.impl(V.NOTHING)))
+  end)
+
+  it("$substring with start/length and negatives", function()
+    assert.are.equal("ell", F.substring.impl("hello", 1, 3))
+    assert.are.equal("lo", F.substring.impl("hello", -2))
+    assert.are.equal("hello", F.substring.impl("hello", 0))
+  end)
+
+  it("$substringBefore/After", function()
+    assert.are.equal("ab", F.substringBefore.impl("ab/cd", "/"))
+    assert.are.equal("cd", F.substringAfter.impl("ab/cd", "/"))
+    assert.are.equal("ab/cd", F.substringBefore.impl("ab/cd", "x"))
+  end)
+
+  it("$uppercase/$lowercase/$trim", function()
+    assert.are.equal("ABC", F.uppercase.impl("abc"))
+    assert.are.equal("abc", F.lowercase.impl("ABC"))
+    assert.are.equal("a b c", F.trim.impl("  a   b  c  "))
+  end)
+
+  it("$pad right (positive) and left (negative)", function()
+    assert.are.equal("ab   ", F.pad.impl("ab", 5))
+    assert.are.equal("xxxab", F.pad.impl("ab", -5, "x"))
+    assert.are.equal("ab", F.pad.impl("ab", 1))
+  end)
+
+  it("$contains (string), $split (string), $join", function()
+    assert.is_true(F.contains.impl("hello", "ell"))
+    assert.is_false(F.contains.impl("hello", "z"))
+    local parts = F.split.impl("a,b,c", ",")
+    assert.are.same({ "a", "b", "c" }, { parts[1], parts[2], parts[3] })
+    assert.are.equal("a-b-c", F.join.impl(V.array({ "a", "b", "c" }), "-"))
+  end)
+end)
