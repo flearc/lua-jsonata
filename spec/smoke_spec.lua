@@ -1,0 +1,6 @@
+describe("jsonata module", function()
+  it("loads and exposes a version", function()
+    local jsonata = require("jsonata")
+    assert.is_string(jsonata._VERSION)
+  end)
+end)

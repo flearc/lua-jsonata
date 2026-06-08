@@ -1,0 +1,298 @@
+local V = require("jsonata.value")
+local errors = require("jsonata.errors")
+local functions = require("jsonata.functions")
+
+local M = {}
+
+local evaluate -- forward declaration
+
+local function as_number(x, code)
+  if V.typeof(x) ~= "number" then
+    errors.raise(code, { value = x })
+  end
+  return x
+end
+
+local function eval_binary(node, input, env)
+  local op = node.value
+  if op == "and" then
+    return functions.truthy(evaluate(node.lhs, input, env)) and functions.truthy(evaluate(node.rhs, input, env))
+  elseif op == "or" then
+    return functions.truthy(evaluate(node.lhs, input, env)) or functions.truthy(evaluate(node.rhs, input, env))
+  end
+
+  local lhs = evaluate(node.lhs, input, env)
+  local rhs = evaluate(node.rhs, input, env)
+
+  if op == "&" then
+    return functions.string.impl(lhs) .. functions.string.impl(rhs)
+  end
+
+  if op == "+" or op == "-" or op == "*" or op == "/" or op == "%" then
+    local a = as_number(lhs, "T2001")
+    local b = as_number(rhs, "T2002")
+    if op == "+" then
+      return a + b
+    elseif op == "-" then
+      return a - b
+    elseif op == "*" then
+      return a * b
+    elseif op == "/" then
+      return a / b
+    else
+      return a % b
+    end
+  end
+
+  if op == "=" then
+    return M.deep_equal(lhs, rhs)
+  elseif op == "!=" then
+    return not M.deep_equal(lhs, rhs)
+  elseif op == "<" or op == "<=" or op == ">" or op == ">=" then
+    local lt, rt = V.typeof(lhs), V.typeof(rhs)
+    if (lt ~= "number" and lt ~= "string") or lt ~= rt then
+      errors.raise("T2010", { value = lhs })
+    end
+    if op == "<" then
+      return lhs < rhs
+    elseif op == "<=" then
+      return lhs <= rhs
+    elseif op == ">" then
+      return lhs > rhs
+    else
+      return lhs >= rhs
+    end
+  end
+
+  errors.raise("S0201", { token = op })
+end
+
+function M.deep_equal(a, b)
+  if a == b then
+    return true
+  end
+  local ta, tb = V.typeof(a), V.typeof(b)
+  if ta ~= tb then
+    return false
+  end
+  if ta == "array" then
+    if #a ~= #b then
+      return false
+    end
+    for i = 1, #a do
+      if not M.deep_equal(a[i], b[i]) then
+        return false
+      end
+    end
+    return true
+  elseif ta == "object" then
+    local ka = V.obj_keys(a)
+    if #ka ~= #V.obj_keys(b) then
+      return false
+    end
+    for _, k in ipairs(ka) do
+      if not M.deep_equal(V.obj_get(a, k), V.obj_get(b, k)) then
+        return false
+      end
+    end
+    return true
+  end
+  return false
+end
+
+-- Variable lookup: $ is the current input/context; named vars resolve via the frame chain.
+function M.eval_variable(node, input, env)
+  if node.value == "" then
+    return input
+  end
+  local v = env:lookup(node.value)
+  if v == nil then
+    return V.NOTHING
+  end
+  return v
+end
+
+-- Build a fresh sequence, appending elements with flattening rules.
+local function append_flat(seq, value)
+  if V.is_nothing(value) then
+    return
+  end
+  if V.is_array(value) and not V.get_flag(value, "cons") then
+    for i = 1, #value do
+      seq[#seq + 1] = value[i]
+    end
+  else
+    seq[#seq + 1] = value
+  end
+end
+
+-- Evaluate one path step against a single context item.
+local function eval_step_on_item(step, item, env)
+  if step.type == "name" then
+    if not V.is_object(item) then
+      return V.NOTHING
+    end
+    return V.obj_get(item, step.value)
+  elseif step.type == "variable" then
+    return M.eval_variable(step, item, env)
+  else
+    return evaluate(step, item, env)
+  end
+end
+
+-- Apply predicates attached to a step to a sequence.
+local function apply_predicates(seq, predicates, env)
+  local current = seq
+  for _, pred in ipairs(predicates) do
+    local next_seq = V.sequence()
+    for i = 1, #current do
+      local item = current[i]
+      local pv = evaluate(pred, item, env)
+      local pt = V.typeof(pv)
+      if pt == "number" then
+        local idx = math.floor(pv)
+        if idx < 0 then
+          idx = #current + idx
+        end
+        if i - 1 == idx then
+          next_seq[#next_seq + 1] = item
+        end
+      elseif pt == "array" then
+        for j = 1, #pv do
+          if V.typeof(pv[j]) == "number" then
+            local idx = math.floor(pv[j])
+            if idx < 0 then
+              idx = #current + idx
+            end
+            if i - 1 == idx then
+              next_seq[#next_seq + 1] = item
+              break
+            end
+          end
+        end
+      elseif functions.truthy(pv) then
+        next_seq[#next_seq + 1] = item
+      end
+    end
+    current = next_seq
+  end
+  return current
+end
+
+local function eval_path(node, input, env)
+  -- Seed the pipeline with the input wrapped as a sequence.
+  local context
+  if V.is_array(input) then
+    context = input
+  else
+    context = V.sequence(input)
+  end
+
+  for _, step in ipairs(node.steps) do
+    local result = V.sequence()
+    for i = 1, #context do
+      local item = context[i]
+      if not V.is_nothing(item) then
+        append_flat(result, eval_step_on_item(step, item, env))
+      end
+    end
+    if step.predicate then
+      result = apply_predicates(result, step.predicate, env)
+    end
+    context = result
+  end
+  return context
+end
+
+-- Singleton unwrapping applied at the boundary of path/array results.
+local function finalize_sequence(seq, keep_singleton)
+  if #seq == 0 then
+    return V.NOTHING
+  elseif #seq == 1 and not keep_singleton then
+    return seq[1]
+  end
+  return seq
+end
+M.finalize_sequence = finalize_sequence
+
+evaluate = function(node, input, env)
+  local t = node.type
+  if t == "number" or t == "string" or t == "boolean" then
+    return node.value
+  elseif t == "null" then
+    return V.NULL
+  elseif t == "unary" then
+    if node.value == "-" then
+      return -as_number(evaluate(node.expression, input, env), "T2001")
+    end
+    errors.raise("S0211", { token = node.value })
+  elseif t == "binary" then
+    return eval_binary(node, input, env)
+  elseif t == "bind" then
+    local val = evaluate(node.rhs, input, env)
+    env:bind(node.lhs.value, val)
+    return val
+  elseif t == "block" then
+    local result = V.NOTHING
+    local frame = env:create_frame()
+    for _, e in ipairs(node.expressions) do
+      result = evaluate(e, input, frame)
+    end
+    return result
+  elseif t == "condition" then
+    if functions.truthy(evaluate(node.condition, input, env)) then
+      return evaluate(node.then_expr, input, env)
+    else
+      return evaluate(node.else_expr, input, env)
+    end
+  elseif t == "variable" then
+    return M.eval_variable(node, input, env)
+  elseif t == "name" then
+    if not V.is_object(input) then
+      return V.NOTHING
+    end
+    return V.obj_get(input, node.value)
+  elseif t == "path" then
+    local seq = eval_path(node, input, env)
+    return finalize_sequence(seq, false)
+  elseif t == "array" then
+    local arr = V.array({})
+    for _, e in ipairs(node.expressions) do
+      local val = evaluate(e, input, env)
+      if not V.is_nothing(val) then
+        arr[#arr + 1] = val
+      end
+    end
+    V.set_flag(arr, "cons", true)
+    return arr
+  elseif t == "object" then
+    local obj = V.object()
+    for _, pair in ipairs(node.pairs) do
+      local k = evaluate(pair[1], input, env)
+      local val = evaluate(pair[2], input, env)
+      V.obj_set(obj, functions.string.impl(k), val)
+    end
+    return obj
+  elseif t == "function" then
+    return M.eval_function(node, input, env)
+  end
+  errors.raise("D3001", { token = t })
+end
+
+function M.eval_function(node, input, env)
+  local proc = evaluate(node.procedure, input, env)
+  if type(proc) ~= "table" or not proc._jsonata_function then
+    errors.raise("T1006", { value = proc })
+  end
+  local args = {}
+  for i, a in ipairs(node.arguments) do
+    args[i] = evaluate(a, input, env)
+  end
+  if proc.arity and #args ~= proc.arity then
+    errors.raise("T0410", { value = #args })
+  end
+  return proc.impl((table.unpack or unpack)(args))
+end
+
+M.evaluate = evaluate
+return M
