@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# The project targets LuaJIT. LuaJIT itself can't drive luarocks (luarocks.org's
+# manifest exceeds LuaJIT's hard 65536-constant bytecode limit), so we install
+# the dev deps with PUC Lua 5.1 — rocks built for 5.1 are ABI-compatible with
+# LuaJIT — and then run the tests under the LuaJIT interpreter.
+
+jobs:
+  test:
+    name: test (luajit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Lua 5.1 (for luarocks)
+        uses: leafo/gh-actions-lua@v10
+        with:
+          luaVersion: "5.1.5"
+
+      - name: Set up LuaRocks
+        uses: leafo/gh-actions-luarocks@v4
+
+      - name: Install dev dependencies (busted, lua-cjson)
+        run: |
+          luarocks install busted
+          luarocks install lua-cjson
+
+      - name: Install the LuaJIT interpreter
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      # Invoke busted's runner directly under LuaJIT (this is exactly what
+      # busted's own bin/busted does) so the whole suite — unit tests + the
+      # official-suite regression guard — runs under the LuaJIT interpreter,
+      # using the ABI-compatible 5.1-installed rocks. (`which busted` is a
+      # luarocks shell wrapper, not a Lua script, so it can't be run directly.)
+      - name: Run tests under LuaJIT
+        run: |
+          eval "$(luarocks path)"
+          luajit -e "require('busted.runner')({ standalone = false })"
