@@ -111,4 +111,47 @@ function H.deep_equal(a, b)
   return false
 end
 
+local function json_escape(s)
+  return (
+    s:gsub('[%z\1-\31\\"]', function(c)
+      local map = { ['"'] = '\\"', ["\\"] = "\\\\", ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t" }
+      return map[c] or string.format("\\u%04x", string.byte(c))
+    end)
+  )
+end
+
+function H.serialize(x)
+  local V = require("jsonata.value")
+  if V.is_null(x) then
+    return "null"
+  end
+  if V.is_nothing(x) then
+    return ""
+  end
+  local t = V.typeof(x)
+  if t == "string" then
+    return '"' .. json_escape(x) .. '"'
+  elseif t == "number" then
+    if x == math.huge or x == -math.huge or x ~= x then
+      H.err("D1001", { value = x })
+    end
+    return H.num_to_str(x)
+  elseif t == "boolean" then
+    return x and "true" or "false"
+  elseif t == "array" then
+    local parts = {}
+    for i = 1, #x do
+      parts[i] = H.serialize(x[i])
+    end
+    return "[" .. table.concat(parts, ",") .. "]"
+  elseif t == "object" then
+    local parts = {}
+    for _, k in ipairs(V.obj_keys(x)) do
+      parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(V.obj_get(x, k))
+    end
+    return "{" .. table.concat(parts, ",") .. "}"
+  end
+  return ""
+end
+
 return H

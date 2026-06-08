@@ -9,11 +9,8 @@ describe("builtins", function()
     assert.are.equal("null", F.string.impl(V.NULL))
   end)
 
-  it("$string raises on containers (deferred to M2)", function()
-    local errs = require("jsonata.errors")
-    local ok, err = pcall(F.string.impl, V.array({ 1 }))
-    assert.is_false(ok)
-    assert.is_true(errs.is_error(err))
+  it("$string serializes containers (implemented in M2b Task 7)", function()
+    assert.are.equal("[1]", F.string.impl(V.array({ 1 })))
   end)
 
   it("$number parses", function()
