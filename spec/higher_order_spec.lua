@@ -37,3 +37,36 @@ describe("higher-order: $map / $filter", function()
     assert.are.same({ 5, 99 }, run("$map(5, function($v, $i, $a){ $append($a, [99]) })"))
   end)
 end)
+
+describe("higher-order: $reduce", function()
+  it("folds left with no initial value", function()
+    assert.are.equal(15, run("$reduce([1,2,3,4,5], function($a,$b){ $a + $b })"))
+  end)
+
+  it("folds left with an initial value", function()
+    assert.are.equal(17, run("$reduce([1,2,3,4,5], function($a,$b){ $a + $b }, 2)"))
+  end)
+
+  it("treats a scalar as a singleton sequence", function()
+    assert.are.equal(1, run("$reduce(1, function($a,$b){ $a + $b })"))
+  end)
+
+  it("returns nothing for an absent sequence WITHOUT checking arity", function()
+    assert.is_nil(run("$reduce(missing, function($a){ $a })", {}))
+  end)
+
+  it("raises D3050 when the reducer takes fewer than two arguments", function()
+    local ok, err = pcall(run, "$reduce([1,2,3], function($a){ $a })")
+    assert.is_false(ok)
+    assert.are.equal("D3050", err.code)
+  end)
+
+  it("returns nothing for an empty array with no init", function()
+    assert.is_nil(run("$reduce([], function($a,$b){ $a + $b })"))
+  end)
+
+  it("passes a 0-based index to a three-arg reducer", function()
+    -- fold [10,20,30]: acc=10; +20+idx1=31; +30+idx2=63
+    assert.are.equal(63, run("$reduce([10,20,30], function($acc,$v,$i){ $acc + $v + $i })"))
+  end)
+end)

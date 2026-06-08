@@ -1,5 +1,6 @@
 local V = require("jsonata.value")
 local H = require("jsonata.functions.helpers")
+local errors = require("jsonata.errors")
 
 local R = {}
 
@@ -80,5 +81,40 @@ R.filter = H.def(function(arr, fn)
   end
   return seq
 end, 2, 2)
+
+-- $reduce(array, function[, init]): fold left. The undefined-sequence check
+-- happens BEFORE the arity check (jsonata foldLeft), so $reduce(nothing, fn)
+-- returns nothing even if fn would fail the arity check.
+R.reduce = H.def(function(arr, fn, init)
+  if V.is_nothing(arr) then
+    return V.NOTHING
+  end
+  arr = to_array(arr)
+  local a = arity_of(fn)
+  if a < 2 then
+    errors.raise("D3050")
+  end
+  local has_init = not (init == nil or V.is_nothing(init))
+  if not has_init and #arr == 0 then
+    return V.NOTHING
+  end
+  local acc, start
+  if not has_init then
+    acc, start = arr[1], 2
+  else
+    acc, start = init, 1
+  end
+  for i = start, #arr do
+    local args = { acc, arr[i] }
+    if a >= 3 then
+      args[3] = i - 1
+    end
+    if a >= 4 then
+      args[4] = arr
+    end
+    acc = apply(fn, args)
+  end
+  return acc
+end, 2, 3)
 
 return R
