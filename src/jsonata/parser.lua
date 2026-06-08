@@ -298,6 +298,46 @@ do
   end
 end
 
+-- Lambda: function ( $a, $b ) { body }
+do
+  local s = symbol("function", 0)
+  s.nud = function(p, t)
+    if p.node.id ~= "(" then
+      errors.raise("S0203", { position = p.node.position, token = "(" })
+    end
+    p.advance() -- consume '('
+    local params = {}
+    if p.node.id ~= ")" then
+      while true do
+        if p.node.type ~= "variable" then
+          errors.raise("S0203", { position = p.node.position, token = tostring(p.node.value) })
+        end
+        params[#params + 1] = p.node.value
+        p.advance()
+        if p.node.id == "," then
+          p.advance()
+        else
+          break
+        end
+      end
+    end
+    if p.node.id ~= ")" then
+      errors.raise("S0203", { position = p.node.position, token = ")" })
+    end
+    p.advance() -- consume ')'
+    if p.node.id ~= "{" then
+      errors.raise("S0203", { position = p.node.position, token = "{" })
+    end
+    p.advance() -- consume '{'
+    local body = p.expression(0)
+    if p.node.id ~= "}" then
+      errors.raise("S0203", { position = p.node.position, token = "}" })
+    end
+    p.advance() -- consume '}'
+    return { type = "lambda", params = params, body = body, position = t.position }
+  end
+end
+
 function M.parse(source)
   local p = make_parser(source)
   p.advance()
@@ -378,6 +418,10 @@ function M.process_ast(ast)
     for i, a in ipairs(ast.arguments) do
       ast.arguments[i] = M.process_ast(a)
     end
+    return ast
+  end
+  if ast.type == "lambda" then
+    ast.body = M.process_ast(ast.body)
     return ast
   end
   return ast
