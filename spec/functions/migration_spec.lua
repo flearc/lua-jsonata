@@ -18,8 +18,10 @@ describe("builtins", function()
     assert.are.equal(5, F.number.impl(5))
   end)
 
-  it("$number returns NOTHING for unparseable strings", function()
-    assert.is_true(V.is_nothing(F.number.impl("abc")))
+  it("$number raises D3030 for unparseable strings", function()
+    local ok, err = pcall(F.number.impl, "abc")
+    assert.is_false(ok)
+    assert.are.equal("D3030", err.code)
   end)
 
   it("$boolean follows JSONata truthiness", function()

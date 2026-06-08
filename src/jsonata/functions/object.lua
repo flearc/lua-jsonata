@@ -105,6 +105,9 @@ R.type = H.def(function(x)
   if V.is_nothing(x) then
     return V.NOTHING
   end
+  if type(x) == "table" and x._jsonata_function then
+    return "function"
+  end
   return V.typeof(x)
 end, 1)
 
@@ -113,10 +116,13 @@ R.error = H.def(function(msg)
 end, 1)
 
 R.assert = H.def(function(cond, msg)
-  if not H.truthy(cond) then
+  if cond == nil or V.is_nothing(cond) or V.typeof(cond) ~= "boolean" then
+    H.err("T0410", { name = "assert", position = 1, value = cond })
+  end
+  if not cond then
     H.err("D3141", { message = V.is_nothing(msg) and "$assert() statement failed" or msg })
   end
   return V.NOTHING
-end, 2)
+end, nil)
 
 return R

@@ -28,8 +28,8 @@ R.number = H.def(function(x)
     return x
   elseif t == "string" then
     local n = parse_number_string(x)
-    if n == nil then
-      return V.NOTHING
+    if n == nil or n ~= n or n == math.huge or n == -math.huge then
+      H.err("D3030", { value = x })
     end
     return n
   elseif t == "boolean" then
@@ -67,6 +67,8 @@ R.round = H.def(function(x, precision)
   precision = precision == nil and 0 or math.floor(precision)
   local factor = 10 ^ precision
   local scaled = x * factor
+  -- correct binary-float representation error before the half-even test
+  scaled = tonumber(string.format("%.12g", scaled)) or scaled
   local floored = math.floor(scaled)
   local diff = scaled - floored
   local rounded
@@ -78,7 +80,7 @@ R.round = H.def(function(x, precision)
     rounded = (floored % 2 == 0) and floored or floored + 1
   end
   return rounded / factor
-end, 2)
+end, nil)
 
 R.power = H.def(function(base, exp)
   if num_guard(base) or num_guard(exp) then
@@ -95,7 +97,7 @@ R.sqrt = H.def(function(x)
     H.err("D3060", { value = x, message = "$sqrt of a negative number" })
   end
   return math.sqrt(x)
-end, 2)
+end, 1)
 
 local DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
 R.formatBase = H.def(function(x, radix)
@@ -121,6 +123,6 @@ R.formatBase = H.def(function(x, radix)
     s = "-" .. s
   end
   return s
-end, 2)
+end, nil)
 
 return R
