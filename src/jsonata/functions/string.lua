@@ -61,7 +61,7 @@ R.length = H.def(function(s)
   return H.utf8_len(s)
 end, 1)
 
-R.substring = H.def(function(s, start, length)
+R.substring = H.def_max(function(s, start, length)
   if not require_string(s, "substring", 1) then
     return V.NOTHING
   end
@@ -134,10 +134,9 @@ R.trim = H.def(function(s)
 end, 1)
 
 R.pad = H.def(function(s, width, char)
-  if not require_string(s, "pad", 1) then
+  if nothing_guard(s) then
     return V.NOTHING
   end
-  require_number(width, "pad", 2)
   char = (char == nil or char == "") and " " or char
   width = math.floor(width)
   local len = H.utf8_len(s)
@@ -145,12 +144,17 @@ R.pad = H.def(function(s, width, char)
   if need <= 0 then
     return s
   end
-  local padding = string.rep(char, need)
+  local pad_chars = H.utf8_chars(char)
+  local built = {}
+  for k = 1, need do
+    built[k] = pad_chars[((k - 1) % #pad_chars) + 1]
+  end
+  local padding = table.concat(built)
   if width < 0 then
     return padding .. s
   end
   return s .. padding
-end, 3)
+end, nil)
 
 R.contains = H.def(function(s, sub)
   if not require_string(s, "contains", 1) then
@@ -163,6 +167,9 @@ end, 2)
 R.split = H.def(function(s, sep, limit)
   if not require_string(s, "split", 1) then
     return V.NOTHING
+  end
+  if sep ~= nil and V.typeof(sep) ~= "string" then
+    H.err("T0410", { name = "split", position = 2, value = sep })
   end
   if limit ~= nil then
     if V.typeof(limit) ~= "number" then
@@ -197,7 +204,7 @@ R.split = H.def(function(s, sep, limit)
     return trimmed
   end
   return result
-end, 3)
+end, nil)
 
 R.join = H.def(function(arr, sep)
   if nothing_guard(arr) then
@@ -221,7 +228,7 @@ R.join = H.def(function(arr, sep)
     parts[i] = arr[i]
   end
   return table.concat(parts, sep)
-end, 2)
+end, nil)
 
 -- Percent-encode every byte not in `unreserved`.
 local function percent_encode(s, unreserved)

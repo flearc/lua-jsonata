@@ -15,6 +15,13 @@ local MESSAGES = {
   T2002 = "The right side of an operator must evaluate to a number",
   T2010 = "Operands of comparison must both be numbers or both be strings",
   D3001 = "Unsupported in M1",
+  D1001 = "Number out of range to be formatted",
+  D3030 = "Unable to cast value to a number",
+  D3047 = "Argument of aggregate function must be an array of numbers",
+  D3060 = "$sqrt of a number that is less than zero",
+  D3100 = "The radix of $formatBase must be between 2 and 36",
+  D3137 = "$error() function evaluated",
+  D3141 = "$assert() statement failed",
 }
 
 function M.is_error(x)

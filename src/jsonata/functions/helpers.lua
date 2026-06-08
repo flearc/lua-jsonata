@@ -7,6 +7,20 @@ function H.def(impl, arity)
   return { _jsonata_function = true, impl = impl, arity = arity }
 end
 
+-- Like H.def but enforces a maximum argument count internally (arity=nil so
+-- the evaluator's exact-match check is skipped; the wrapper raises T0410 when
+-- the caller passes more than max_arity arguments).
+function H.def_max(impl, max_arity)
+  local wrapped = function(...)
+    local n = select("#", ...)
+    if n > max_arity then
+      errors.raise("T0410", { value = n })
+    end
+    return impl(...)
+  end
+  return { _jsonata_function = true, impl = wrapped, arity = nil }
+end
+
 -- JSONata truthiness (migrated unchanged from M1 functions.lua).
 local function truthy(x)
   if V.is_nothing(x) then
@@ -122,6 +136,9 @@ end
 
 function H.serialize(x)
   local V = require("jsonata.value")
+  if type(x) == "table" and x._jsonata_function then
+    return ""
+  end
   if V.is_null(x) then
     return "null"
   end
