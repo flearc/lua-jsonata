@@ -1,0 +1,5 @@
+[
+  { "expr": "1", "result": 1 },
+  { "expr": "2", "result": 2 },
+  { "expr": "3", "result": 3 }
+]

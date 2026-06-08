@@ -1,0 +1,28 @@
+local json = require("support.suite_json")
+
+describe("suite_json", function()
+  it("exposes a NULL marker obtained from the library", function()
+    assert.is_not_nil(json.NULL)
+  end)
+
+  it("decodes scalars", function()
+    assert.are.equal(42, json.decode("42"))
+    assert.are.equal("hi", json.decode([["hi"]]))
+    assert.are.equal(true, json.decode("true"))
+  end)
+
+  it("maps JSON null to the library NULL marker, top-level and nested", function()
+    assert.are.equal(json.NULL, json.decode("null"))
+    local o = json.decode([[{"a":null,"b":[1,null]}]])
+    assert.are.equal(json.NULL, o.a)
+    assert.are.equal(json.NULL, o.b[2])
+    assert.are.equal(1, o.b[1])
+  end)
+
+  it("NULL marker round-trips as input to the library", function()
+    local jsonata = require("jsonata")
+    local data = json.decode([[{"x":null}]])
+    local r = jsonata.compile("x"):evaluate(data)
+    assert.are.equal(json.NULL, r)
+  end)
+end)
