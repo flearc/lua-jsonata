@@ -75,4 +75,40 @@ function H.err(code, info)
   errors.raise(code, info or {})
 end
 
+-- Structural equality over internal values (numbers/strings/booleans exact;
+-- arrays elementwise; objects key-set + recursive; null/nothing by identity).
+function H.deep_equal(a, b)
+  if a == b then
+    return true
+  end
+  local V = require("jsonata.value")
+  local ta, tb = V.typeof(a), V.typeof(b)
+  if ta ~= tb then
+    return false
+  end
+  if ta == "array" then
+    if #a ~= #b then
+      return false
+    end
+    for i = 1, #a do
+      if not H.deep_equal(a[i], b[i]) then
+        return false
+      end
+    end
+    return true
+  elseif ta == "object" then
+    local ka = V.obj_keys(a)
+    if #ka ~= #V.obj_keys(b) then
+      return false
+    end
+    for _, k in ipairs(ka) do
+      if not H.deep_equal(V.obj_get(a, k), V.obj_get(b, k)) then
+        return false
+      end
+    end
+    return true
+  end
+  return false
+end
+
 return H
