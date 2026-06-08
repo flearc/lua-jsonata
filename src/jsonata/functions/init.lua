@@ -10,6 +10,7 @@ local categories = {
   require("jsonata.functions.aggregation"),
   require("jsonata.functions.array"),
   require("jsonata.functions.object"),
+  require("jsonata.functions.higher_order"),
 }
 
 M.registry = {}
