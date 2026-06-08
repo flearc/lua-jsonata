@@ -345,6 +345,12 @@ function M.eval_function(node, input, env)
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
   end
+  -- Context injection: $sift/$each carry inject_context; a bare call (only the
+  -- function arg) uses the current input as the object argument. This is our
+  -- minimal stand-in for jsonata's '-' context signature marker.
+  if type(proc) == "table" and proc.inject_context and #args == 1 then
+    table.insert(args, 1, input)
+  end
   local result = M.apply(proc, args)
   if V.is_sequence(result) then
     return finalize_sequence(result, false)

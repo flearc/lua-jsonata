@@ -96,3 +96,37 @@ describe("higher-order: $single", function()
     assert.are.equal("one", run([[$single(["zero","one","two"], function($v,$i,$a){ $i = 1 })]]))
   end)
 end)
+
+describe("higher-order: $sift / $each", function()
+  it("$sift keeps key/value pairs whose value is truthy", function()
+    assert.are.same({ a = 1 }, run([[$sift({"a": 1, "b": 0}, $boolean)]]))
+  end)
+
+  it("$sift passes (value, key) to a two-arg callback", function()
+    assert.are.same({ Age = 28 }, run([[$sift({"Age": 28, "Name": "x"}, function($v, $k){ $k = "Age" })]]))
+  end)
+
+  it("$sift injects the current input when called with only the function", function()
+    assert.are.same({ keep = "x" }, run([[$sift(function($v){ $v = "x" })]], { keep = "x", drop = "y" }))
+  end)
+
+  it("$sift returns nothing when nothing is kept", function()
+    assert.is_nil(run([[$sift({"a": 0}, $boolean)]]))
+  end)
+
+  it("$each collects callback results over key/value pairs in order", function()
+    assert.are.same({ "HELLO", "WORLD" }, run([[$each({"a": "hello", "b": "world"}, $uppercase)]]))
+  end)
+
+  it("$each passes (value, key) to a two-arg callback", function()
+    assert.are.same({ "a1", "b2" }, run([[$each({"a": 1, "b": 2}, function($v, $k){ $k & $v })]]))
+  end)
+
+  it("$sift returns nothing (no crash) when the object arg is not an object", function()
+    assert.is_nil(run("$sift(missing, $boolean)", {}))
+  end)
+
+  it("$each returns nothing (no crash) when the object arg is not an object", function()
+    assert.is_nil(run("$each(missing, $uppercase)", {}))
+  end)
+end)

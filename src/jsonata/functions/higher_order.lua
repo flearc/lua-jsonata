@@ -146,4 +146,41 @@ R.single = H.def(function(arr, fn)
   return result
 end, 1, 2)
 
+-- $sift(object, function): keep key/value pairs whose callback result is truthy.
+-- Empty result -> nothing. inject_context: a bare $sift(fn) uses the current input.
+R.sift = H.def(function(obj, fn)
+  if not V.is_object(obj) then
+    return V.NOTHING
+  end
+  local result = V.object()
+  for _, k in ipairs(V.obj_keys(obj)) do
+    local v = V.obj_get(obj, k)
+    if H.truthy(apply(fn, hof_args(fn, v, k, obj))) then
+      V.obj_set(result, k, v)
+    end
+  end
+  if #V.obj_keys(result) == 0 then
+    return V.NOTHING
+  end
+  return result
+end, 2, 2)
+R.sift.inject_context = true
+
+-- $each(object, function): collect non-nothing callback results into a sequence.
+R.each = H.def(function(obj, fn)
+  if not V.is_object(obj) then
+    return V.NOTHING
+  end
+  local seq = V.sequence()
+  for _, k in ipairs(V.obj_keys(obj)) do
+    local v = V.obj_get(obj, k)
+    local res = apply(fn, hof_args(fn, v, k, obj))
+    if not V.is_nothing(res) then
+      seq[#seq + 1] = res
+    end
+  end
+  return seq
+end, 2, 2)
+R.each.inject_context = true
+
 return R
