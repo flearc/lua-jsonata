@@ -277,6 +277,18 @@ evaluate = function(node, input, env)
     return M.eval_function(node, input, env)
   elseif t == "lambda" then
     return { _jsonata_lambda = true, params = node.params, body = node.body, env = env, input = input }
+  elseif t == "apply" then
+    local lhs = evaluate(node.lhs, input, env)
+    local rhs = node.rhs
+    if rhs.type == "function" then
+      local proc = evaluate(rhs.procedure, input, env)
+      local args = { lhs }
+      for _, a in ipairs(rhs.arguments) do
+        args[#args + 1] = evaluate(a, input, env)
+      end
+      return M.apply(proc, args)
+    end
+    return M.apply(evaluate(rhs, input, env), { lhs })
   end
   errors.raise("D3001", { token = t })
 end

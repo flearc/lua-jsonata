@@ -153,3 +153,21 @@ describe("evaluator: lambdas", function()
     assert.is_true(V.is_nothing(eval("function($x){ $x }()")))
   end)
 end)
+
+describe("evaluator: apply operator ~>", function()
+  it("applies a function to the LHS", function()
+    assert.are.equal("5", eval("5 ~> $string"))
+  end)
+
+  it("chains left to right", function()
+    assert.are.equal(1, eval("5 ~> $string ~> $length"))
+  end)
+
+  it("prepends the LHS as the first arg when RHS is a call", function()
+    assert.are.equal("he", eval([["hello" ~> $substring(0, 2)]]))
+  end)
+
+  it("applies a lambda via ~>", function()
+    assert.are.equal(6, eval("5 ~> function($x){ $x + 1 }"))
+  end)
+end)
