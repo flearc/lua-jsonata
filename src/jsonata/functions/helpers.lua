@@ -136,7 +136,7 @@ end
 
 function H.serialize(x)
   local V = require("jsonata.value")
-  if type(x) == "table" and x._jsonata_function then
+  if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
     return ""
   end
   if V.is_null(x) then

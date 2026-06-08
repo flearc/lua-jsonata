@@ -105,7 +105,7 @@ R.type = H.def(function(x)
   if V.is_nothing(x) then
     return V.NOTHING
   end
-  if type(x) == "table" and x._jsonata_function then
+  if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
     return "function"
   end
   return V.typeof(x)

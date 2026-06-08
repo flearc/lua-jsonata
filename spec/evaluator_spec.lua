@@ -181,3 +181,13 @@ describe("evaluator: partial application", function()
     assert.are.equal("ell", eval([[($f := $substring("hello", ?, ?); $f(1, 3))]]))
   end)
 end)
+
+describe("evaluator: lambda as a first-class value", function()
+  it("$type of a lambda is 'function'", function()
+    assert.are.equal("function", eval("$type(function($x){ $x })"))
+  end)
+
+  it("$string of a lambda is empty (no crash)", function()
+    assert.are.equal("", eval("$string(function($x){ $x })"))
+  end)
+end)
