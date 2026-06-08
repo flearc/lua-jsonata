@@ -222,4 +222,50 @@ R.join = H.def(function(arr, sep)
   return table.concat(parts, sep)
 end, 2)
 
+-- Percent-encode every byte not in `unreserved`.
+local function percent_encode(s, unreserved)
+  return (s:gsub("[^" .. unreserved .. "]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+local function percent_decode(s)
+  return (s:gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex, 16))
+  end))
+end
+
+-- Component: encode everything except RFC3986 unreserved.
+local COMPONENT_UNRESERVED = "%w%-%_%.%!%~%*%'%(%)"
+-- Full URL: also keep reserved/delimiter chars.
+local URL_UNRESERVED = COMPONENT_UNRESERVED .. "%;%,%/%?%:%@%&%=%+%$%#%[%]"
+
+R.encodeUrlComponent = H.def(function(s)
+  if V.is_nothing(s) then
+    return V.NOTHING
+  end
+  return percent_encode(s, COMPONENT_UNRESERVED)
+end, 1)
+
+R.encodeUrl = H.def(function(s)
+  if V.is_nothing(s) then
+    return V.NOTHING
+  end
+  return percent_encode(s, URL_UNRESERVED)
+end, 1)
+
+R.decodeUrlComponent = H.def(function(s)
+  if V.is_nothing(s) then
+    return V.NOTHING
+  end
+  return percent_decode(s)
+end, 1)
+
+R.decodeUrl = H.def(function(s)
+  if V.is_nothing(s) then
+    return V.NOTHING
+  end
+  return percent_decode(s)
+end, 1)
+
 return R
