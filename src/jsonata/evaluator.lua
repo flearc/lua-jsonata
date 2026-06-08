@@ -275,23 +275,42 @@ evaluate = function(node, input, env)
     return obj
   elseif t == "function" then
     return M.eval_function(node, input, env)
+  elseif t == "lambda" then
+    return { _jsonata_lambda = true, params = node.params, body = node.body, env = env, input = input }
   end
   errors.raise("D3001", { token = t })
 end
 
+-- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
+function M.apply(proc, args)
+  if type(proc) == "table" and proc._jsonata_lambda then
+    return M.apply_lambda(proc, args)
+  end
+  if type(proc) == "table" and proc._jsonata_function then
+    return proc.impl((table.unpack or unpack)(args, 1, #args))
+  end
+  errors.raise("T1006", { value = proc })
+end
+
+function M.apply_lambda(proc, args)
+  local frame = proc.env:create_frame()
+  for i, name in ipairs(proc.params) do
+    local v = args[i]
+    if v == nil then
+      v = V.NOTHING
+    end
+    frame:bind(name, v)
+  end
+  return evaluate(proc.body, proc.input, frame)
+end
+
 function M.eval_function(node, input, env)
   local proc = evaluate(node.procedure, input, env)
-  if type(proc) ~= "table" or not proc._jsonata_function then
-    errors.raise("T1006", { value = proc })
-  end
   local args = {}
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
   end
-  if proc.arity and #args ~= proc.arity then
-    errors.raise("T0410", { value = #args })
-  end
-  return proc.impl((table.unpack or unpack)(args))
+  return M.apply(proc, args)
 end
 
 M.evaluate = evaluate

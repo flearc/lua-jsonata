@@ -134,3 +134,22 @@ describe("evaluator: constructors and function calls", function()
     assert.is_true(errs.is_error(err))
   end)
 end)
+
+describe("evaluator: lambdas", function()
+  it("defines and applies a lambda", function()
+    assert.are.equal(6, eval("function($x){ $x + 1 }(5)"))
+  end)
+
+  it("lambda bound to a variable", function()
+    assert.are.equal(7, eval("($double := function($x){ $x * 2 }; $double(3) + 1)"))
+  end)
+
+  it("lambda is a closure capturing its environment", function()
+    assert.are.equal(15, eval("($a := 10; function($x){ $x + $a })(5)"))
+  end)
+
+  it("missing lambda args bind to nothing", function()
+    local V = require("jsonata.value")
+    assert.is_true(V.is_nothing(eval("function($x){ $x }()")))
+  end)
+end)
