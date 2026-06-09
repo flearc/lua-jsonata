@@ -180,18 +180,18 @@ local function apply_predicates(seq, predicates, env)
 end
 
 local function eval_path(node, input, env)
-  -- Seed the pipeline with the input wrapped as a sequence.
-  -- Special case: a path beginning with a variable step (named $x or the
-  -- context $) is seeded from the variable's resolved value, flattened into a
-  -- fresh sequence, rather than from the raw input. Named variables are
-  -- env-bound (independent of input, so a NOTHING input must not suppress the
-  -- lookup); for $ this also yields the correct jsonata sequence semantics for
-  -- the following steps. Verified: maximizes suite conformance, 0 regressions.
+  -- Special case: when the first step is a variable ($x) or a function call
+  -- ($f(...)), evaluate it once and seed the context from its value, flattened
+  -- into a fresh sequence, rather than from the raw input. Both are resolved
+  -- independently of the per-step input — a variable is env-bound, and a
+  -- function call produces its own value — so a NOTHING input must not let the
+  -- per-step nothing-guard skip them (which would wrongly yield empty). This
+  -- makes $x.foo and $sort(...).field resolve correctly.
   local context
   local steps = node.steps
   local start = 1
-  if steps[1] and steps[1].type == "variable" then
-    local var_val = M.eval_variable(steps[1], input, env)
+  if steps[1] and (steps[1].type == "variable" or steps[1].type == "function") then
+    local var_val = evaluate(steps[1], input, env)
     local result = V.sequence()
     append_flat(result, var_val)
     if steps[1].predicate then
