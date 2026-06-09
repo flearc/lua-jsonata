@@ -382,6 +382,30 @@ do
   end
 end
 
+-- Transform operator: | pattern | update [, delete] |. Prefix (the rhs of ~>).
+-- lbp stays 0 so the inner expressions stop at the next '|' / ','.
+do
+  local s = symbol("|", 0)
+  s.nud = function(p, t)
+    local pattern = p.expression(0)
+    if p.node.id ~= "|" then
+      errors.raise("S0203", { position = p.node.position, token = "|" })
+    end
+    p.advance() -- middle '|'
+    local update = p.expression(0)
+    local del = nil
+    if p.node.id == "," then
+      p.advance()
+      del = p.expression(0)
+    end
+    if p.node.id ~= "|" then
+      errors.raise("S0203", { position = p.node.position, token = "|" })
+    end
+    p.advance() -- closing '|'
+    return { type = "transform", pattern = pattern, update = update, delete = del, position = t.position }
+  end
+end
+
 -- Order-by operator: lhs ^ ( [<|>] term (, [<|>] term)* ). Binding power 40 so
 -- the left path/index forms first (e.g. Account.Order.Product^(Price).SKU).
 do
@@ -530,6 +554,14 @@ function M.process_ast(ast)
   if ast.type == "apply" then
     ast.lhs = M.process_ast(ast.lhs)
     ast.rhs = M.process_ast(ast.rhs)
+    return ast
+  end
+  if ast.type == "transform" then
+    ast.pattern = M.process_ast(ast.pattern)
+    ast.update = M.process_ast(ast.update)
+    if ast.delete then
+      ast.delete = M.process_ast(ast.delete)
+    end
     return ast
   end
   return ast

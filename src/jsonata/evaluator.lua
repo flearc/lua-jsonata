@@ -232,6 +232,25 @@ local function eval_sort_step(context, terms, env)
   return seq
 end
 
+-- Deep copy a value (objects/arrays recursively; scalars/NULL/NOTHING shared).
+-- Used by the transform operator so it can mutate a copy without touching input.
+local function deep_clone(v)
+  if V.is_array(v) then
+    local out = V.array({})
+    for i = 1, #v do
+      out[i] = deep_clone(v[i])
+    end
+    return out
+  elseif V.is_object(v) then
+    local out = V.object()
+    for _, k in ipairs(V.obj_keys(v)) do
+      V.obj_set(out, k, deep_clone(V.obj_get(v, k)))
+    end
+    return out
+  end
+  return v
+end
+
 -- Group a context sequence by each pair's key expression, then evaluate each
 -- pair's value over its grouped data (the {} group-by operator). Returns a
 -- one-element sequence holding the result object. Matches jsonata's
@@ -436,6 +455,55 @@ evaluate = function(node, input, env)
       return M.apply(proc, args)
     end
     return M.apply(evaluate(rhs, input, env), { lhs })
+  elseif t == "transform" then
+    return {
+      _jsonata_function = true,
+      impl = function(obj)
+        if obj == nil or V.is_nothing(obj) then
+          return V.NOTHING
+        end
+        local result = deep_clone(obj)
+        local matches = evaluate(node.pattern, result, env)
+        if V.is_nothing(matches) then
+          return result
+        end
+        if not V.is_array(matches) then
+          matches = V.array({ matches })
+        end
+        for i = 1, #matches do
+          local match = matches[i]
+          local update = evaluate(node.update, match, env)
+          if not V.is_nothing(update) then
+            if V.typeof(update) ~= "object" then
+              errors.raise("T2011", { value = update })
+            end
+            if V.is_object(match) then
+              for _, k in ipairs(V.obj_keys(update)) do
+                V.obj_set(match, k, V.obj_get(update, k))
+              end
+            end
+          end
+          if node.delete then
+            local del = evaluate(node.delete, match, env)
+            if not V.is_nothing(del) then
+              local original = del
+              local list = V.is_array(del) and del or V.array({ del })
+              for j = 1, #list do
+                if V.typeof(list[j]) ~= "string" then
+                  errors.raise("T2012", { value = original })
+                end
+              end
+              if V.is_object(match) then
+                for j = 1, #list do
+                  V.obj_delete(match, list[j])
+                end
+              end
+            end
+          end
+        end
+        return result
+      end,
+    }
   end
   errors.raise("D3001", { token = t })
 end

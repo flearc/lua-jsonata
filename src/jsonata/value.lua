@@ -102,6 +102,19 @@ function M.obj_keys(o)
   return o.keys
 end
 
+function M.obj_delete(o, k)
+  if o.map[k] == nil then
+    return
+  end
+  o.map[k] = nil
+  for i = 1, #o.keys do
+    if o.keys[i] == k then
+      table.remove(o.keys, i)
+      break
+    end
+  end
+end
+
 function M.typeof(x)
   if x == M.NULL then
     return "null"
