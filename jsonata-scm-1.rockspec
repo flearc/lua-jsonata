@@ -33,6 +33,7 @@ build = {
     ["jsonata.functions.aggregation"] = "src/jsonata/functions/aggregation.lua",
     ["jsonata.functions.array"] = "src/jsonata/functions/array.lua",
     ["jsonata.functions.object"] = "src/jsonata/functions/object.lua",
+    ["jsonata.sort"] = "src/jsonata/sort.lua",
     ["jsonata.evaluator"] = "src/jsonata/evaluator.lua",
   },
 }
