@@ -249,7 +249,7 @@ symbol(",", 0)
 
 -- Object constructor.
 do
-  local s = symbol("{", 80)
+  local s = symbol("{", 70)
   s.nud = function(p, t)
     local pairs_list = {}
     if p.node.id ~= "}" then
@@ -277,6 +277,36 @@ do
 end
 symbol("}", 0)
 symbol(":", 0)
+
+-- Group-by operator: lhs { key : value (, key : value)* }. Binding power 70 so
+-- the left path forms first (e.g. Account.Order.Product{ProductID: Price}).
+do
+  local s = symbol("{", 70)
+  s.led = function(p, t, left)
+    local pairs_list = {}
+    if p.node.id ~= "}" then
+      repeat
+        local key = p.expression(0)
+        if p.node.id ~= ":" then
+          errors.raise("S0203", { position = p.node.position, token = ":" })
+        end
+        p.advance() -- ':'
+        local val = p.expression(0)
+        pairs_list[#pairs_list + 1] = { key, val }
+        if p.node.id == "," then
+          p.advance()
+        else
+          break
+        end
+      until false
+    end
+    if p.node.id ~= "}" then
+      errors.raise("S0203", { position = p.node.position, token = "}" })
+    end
+    p.advance() -- '}'
+    return { type = "group", lhs = left, pairs = pairs_list, position = t.position }
+  end
+end
 
 -- Ternary conditional.
 do
@@ -434,6 +464,18 @@ function M.process_ast(ast)
       return target
     end
     return { type = "path", steps = { target, sort_step }, position = ast.position }
+  end
+  if ast.type == "group" then
+    local target = M.process_ast(ast.lhs)
+    local group_step = { type = "group", pairs = {}, position = ast.position }
+    for i, pair in ipairs(ast.pairs) do
+      group_step.pairs[i] = { M.process_ast(pair[1]), M.process_ast(pair[2]) }
+    end
+    if target.type == "path" then
+      target.steps[#target.steps + 1] = group_step
+      return target
+    end
+    return { type = "path", steps = { target, group_step }, position = ast.position }
   end
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
