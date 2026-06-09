@@ -565,14 +565,17 @@ local function _evaluate(node, input, env)
 end
 
 -- Thin explain seam. Assigns the forward-declared `evaluate` upvalue (line 8)
--- that every recursive call site binds to, so the hook observes EVERY node
--- (incl. HOF/lambda/transform). When no hook is on the env chain this is one
--- nil-returning lookup then a direct call; the dispatch body above is unchanged.
--- The `hook.pre` shape check stops a stray user variable named __explain_hook
--- from being mistaken for a hook.
+-- that every recursive call site binds to, so an installed hook observes every
+-- node evaluated through `evaluate` (incl. HOF/lambda/transform sub-evaluations
+-- and the first path step). Note: `eval_step_on_item` resolves `name`/`variable`
+-- path steps inline (a deliberate fast path), so those non-first path steps are
+-- not individually observed -- intentional, to leave the evaluation hot path
+-- untouched. A hook is a table with BOTH `pre` and `post`; anything else (nil,
+-- a stray user variable named __explain_hook, a partial table) falls through to
+-- the unchanged direct call.
 evaluate = function(node, input, env)
   local hook = env:lookup("__explain_hook")
-  if not (hook and hook.pre) then
+  if not (hook and hook.pre and hook.post) then
     return _evaluate(node, input, env)
   end
   hook.pre(node, input, env)

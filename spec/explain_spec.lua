@@ -5,13 +5,15 @@ local parser = require("jsonata.parser")
 describe("explain: evaluator seam", function()
   it("fires the explain hook pre/post for every evaluated node", function()
     local pre, post = {}, {}
+    local post_results = {}
     local env = Environment.new():create_frame()
     env:bind("__explain_hook", {
       pre = function(node)
         pre[#pre + 1] = node.type
       end,
-      post = function(node)
+      post = function(node, input, env, result)
         post[#post + 1] = node.type
+        post_results[#post_results + 1] = result
       end,
     })
     local ast = parser.parse("1 + 2")
@@ -20,6 +22,8 @@ describe("explain: evaluator seam", function()
     assert.are.equal(3, #pre)
     assert.are.equal(3, #post)
     assert.are.equal("binary", pre[1])
+    -- post fires in completion order; the last one is the top-level binary's result
+    assert.are.equal(3, post_results[#post_results])
   end)
 
   it("does not treat a stray user var named __explain_hook as a hook", function()
