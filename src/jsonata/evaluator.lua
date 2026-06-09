@@ -400,7 +400,7 @@ local function finalize_sequence(seq, keep_singleton)
 end
 M.finalize_sequence = finalize_sequence
 
-evaluate = function(node, input, env)
+local function _evaluate(node, input, env)
   local t = node.type
   if t == "number" or t == "string" or t == "boolean" then
     return node.value
@@ -562,6 +562,26 @@ evaluate = function(node, input, env)
     return seq
   end
   errors.raise("D3001", { token = t })
+end
+
+-- Thin explain seam. Assigns the forward-declared `evaluate` upvalue (line 8)
+-- that every recursive call site binds to, so an installed hook observes every
+-- node evaluated through `evaluate` (incl. HOF/lambda/transform sub-evaluations
+-- and the first path step). Note: `eval_step_on_item` resolves `name`/`variable`
+-- path steps inline (a deliberate fast path), so those non-first path steps are
+-- not individually observed -- intentional, to leave the evaluation hot path
+-- untouched. A hook is a table with BOTH `pre` and `post`; anything else (nil,
+-- a stray user variable named __explain_hook, a partial table) falls through to
+-- the unchanged direct call.
+evaluate = function(node, input, env)
+  local hook = env:lookup("__explain_hook")
+  if not (hook and hook.pre and hook.post) then
+    return _evaluate(node, input, env)
+  end
+  hook.pre(node, input, env)
+  local result = _evaluate(node, input, env)
+  hook.post(node, input, env, result)
+  return result
 end
 
 -- Apply a procedure (lambda closure or builtin) to a list of evaluated args.

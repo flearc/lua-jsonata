@@ -446,14 +446,18 @@ do
   end
 end
 
-function M.parse(source)
+function M.parse_raw(source)
   local p = make_parser(source)
   p.advance()
   local ast = p.expression(0)
   if p.node.type ~= "(end)" then
     errors.raise("S0201", { position = p.node.position, token = p.node.value })
   end
-  return M.process_ast(ast)
+  return ast
+end
+
+function M.parse(source)
+  return M.process_ast(M.parse_raw(source))
 end
 
 local function flatten_path(node, steps)
