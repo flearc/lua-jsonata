@@ -65,6 +65,9 @@ function Expression:evaluate(input, bindings)
       env:bind(name, adapter.from_lua(value))
     end
   end
+  if self._explain_hook then
+    env:bind("__explain_hook", self._explain_hook)
+  end
   local internal_input = adapter.from_lua(input)
   local result = Evaluator.evaluate(self.ast, internal_input, env)
   return adapter.to_lua(result)

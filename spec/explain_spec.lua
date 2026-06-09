@@ -39,3 +39,19 @@ describe("explain: evaluator seam", function()
     assert.are.equal(3, Evaluator.evaluate(ast, nil, env))
   end)
 end)
+
+describe("explain: hook injection via public API", function()
+  it("Expression:evaluate honors self._explain_hook", function()
+    local jsonata = require("jsonata")
+    local seen = {}
+    local expr = jsonata.compile("1 + 2")
+    expr._explain_hook = {
+      pre = function(node)
+        seen[#seen + 1] = node.type
+      end,
+      post = function() end,
+    }
+    assert.are.equal(3, expr:evaluate(nil))
+    assert.are.equal(3, #seen)
+  end)
+end)
