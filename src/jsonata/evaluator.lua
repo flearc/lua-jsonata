@@ -1,6 +1,7 @@
 local V = require("jsonata.value")
 local errors = require("jsonata.errors")
 local functions = require("jsonata.functions")
+local sort = require("jsonata.sort")
 
 local M = {}
 
@@ -179,18 +180,73 @@ local function apply_predicates(seq, predicates, env)
   return current
 end
 
+-- Reorder a whole context sequence by one or more sort terms (the ^ operator).
+-- comp_after(a, b) is true when a should sort AFTER b, matching jsonata's
+-- evaluateSortExpression: per term, evaluate the key in each element's context;
+-- undefined sorts last; non-number/string -> T2008; mismatched types -> T2007;
+-- descending negates; first non-equal term decides.
+local function eval_sort_step(context, terms, env)
+  local list = {}
+  for j = 1, #context do
+    list[j] = context[j]
+  end
+  local comp_after = function(a, b)
+    local comp = 0
+    for _, term in ipairs(terms) do
+      local aa = evaluate(term.expression, a, env)
+      local bb = evaluate(term.expression, b, env)
+      if V.is_nothing(aa) then
+        comp = V.is_nothing(bb) and 0 or 1
+      elseif V.is_nothing(bb) then
+        comp = -1
+      else
+        local ta, tb = V.typeof(aa), V.typeof(bb)
+        if (ta ~= "number" and ta ~= "string") or (tb ~= "number" and tb ~= "string") then
+          errors.raise("T2008", { value = (ta ~= "number" and ta ~= "string") and aa or bb })
+        end
+        if ta ~= tb then
+          errors.raise("T2007", { value = aa, value2 = bb })
+        end
+        if aa == bb then
+          comp = 0
+        elseif aa < bb then
+          comp = -1
+        else
+          comp = 1
+        end
+        if term.descending then
+          comp = -comp
+        end
+      end
+      if comp ~= 0 then
+        break
+      end
+    end
+    return comp == 1
+  end
+  local sorted = sort.stable_sort(list, comp_after)
+  local seq = V.sequence()
+  for j = 1, #sorted do
+    seq[j] = sorted[j]
+  end
+  return seq
+end
+
 local function eval_path(node, input, env)
-  -- Special case: when the first step is a variable ($x) or a function call
-  -- ($f(...)), evaluate it once and seed the context from its value, flattened
-  -- into a fresh sequence, rather than from the raw input. Both are resolved
-  -- independently of the per-step input — a variable is env-bound, and a
-  -- function call produces its own value — so a NOTHING input must not let the
-  -- per-step nothing-guard skip them (which would wrongly yield empty). This
-  -- makes $x.foo and $sort(...).field resolve correctly.
+  -- Special case: when the first step produces a value from the WHOLE input
+  -- rather than navigating into it per-element, evaluate it once and seed the
+  -- context from that value (flattened into a fresh sequence). This covers:
+  --   * a variable ($x) or the context $ — env-bound, independent of input;
+  --   * a function call ($f(...)) — a self-contained call;
+  --   * a nested path — produced when a predicate/sort wraps a sub-expression
+  --     (e.g. a[0].b or $^(key).field); it must run once over the whole input
+  --     to build the full context before later steps navigate.
+  -- Evaluating once (not per-item) also stops a NOTHING input from being
+  -- skipped by the per-step nothing-guard.
   local context
   local steps = node.steps
   local start = 1
-  if steps[1] and (steps[1].type == "variable" or steps[1].type == "function") then
+  if steps[1] and (steps[1].type == "variable" or steps[1].type == "function" or steps[1].type == "path") then
     local var_val = evaluate(steps[1], input, env)
     local result = V.sequence()
     append_flat(result, var_val)
@@ -207,17 +263,21 @@ local function eval_path(node, input, env)
 
   for i = start, #steps do
     local step = steps[i]
-    local result = V.sequence()
-    for j = 1, #context do
-      local item = context[j]
-      if not V.is_nothing(item) then
-        append_flat(result, eval_step_on_item(step, item, env))
+    if step.type == "sort" then
+      context = eval_sort_step(context, step.terms, env)
+    else
+      local result = V.sequence()
+      for j = 1, #context do
+        local item = context[j]
+        if not V.is_nothing(item) then
+          append_flat(result, eval_step_on_item(step, item, env))
+        end
       end
+      context = result
     end
     if step.predicate then
-      result = apply_predicates(result, step.predicate, env)
+      context = apply_predicates(context, step.predicate, env)
     end
-    context = result
   end
   return context
 end
