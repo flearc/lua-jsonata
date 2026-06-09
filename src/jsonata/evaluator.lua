@@ -14,6 +14,10 @@ local function as_number(x, code)
   return x
 end
 
+local function is_integer(x)
+  return V.typeof(x) == "number" and x == math.floor(x)
+end
+
 local function eval_binary(node, input, env)
   local op = node.value
   if op == "and" then
@@ -325,10 +329,32 @@ local function eval_path(node, input, env)
   local context
   local steps = node.steps
   local start = 1
-  if steps[1] and (steps[1].type == "variable" or steps[1].type == "function" or steps[1].type == "path") then
+  -- An array constructor is self-contained (evaluated once, not per-element)
+  -- when it is the sole step or the next step is not a variable lookup.
+  -- This covers [range][pred] and [range].(expr).
+  -- [arr].$var is kept per-element because Lua's from_lua({}) converts any empty
+  -- table to V.object (empty arrays and objects are indistinguishable), so the
+  -- correct "undefined" result for variables/case009 ([1,2,3].$v, v=[]) only
+  -- falls out from the nothing-guard skipping the array step.
+  local first_is_self_contained = steps[1]
+    and (
+      steps[1].type == "variable"
+      or steps[1].type == "function"
+      or steps[1].type == "path"
+      or (steps[1].type == "array" and not (steps[2] and steps[2].type == "variable"))
+    )
+  if first_is_self_contained then
     local var_val = evaluate(steps[1], input, env)
     local result = V.sequence()
-    append_flat(result, var_val)
+    if steps[1].type == "array" and V.is_array(var_val) then
+      -- Spread array elements into the context sequence so subsequent steps
+      -- (predicates, maps) operate on individual elements.
+      for i = 1, #var_val do
+        result[#result + 1] = var_val[i]
+      end
+    else
+      append_flat(result, var_val)
+    end
     if steps[1].predicate then
       result = apply_predicates(result, steps[1].predicate, env)
     end
@@ -425,7 +451,11 @@ evaluate = function(node, input, env)
     local arr = V.array({})
     for _, e in ipairs(node.expressions) do
       local val = evaluate(e, input, env)
-      if not V.is_nothing(val) then
+      if V.is_sequence(val) then
+        for i = 1, #val do
+          arr[#arr + 1] = val[i]
+        end
+      elseif not V.is_nothing(val) then
         arr[#arr + 1] = val
       end
     end
@@ -504,6 +534,32 @@ evaluate = function(node, input, env)
         return result
       end,
     }
+  elseif t == "range" then
+    local lhs = evaluate(node.lhs, input, env)
+    local rhs = evaluate(node.rhs, input, env)
+    if not V.is_nothing(lhs) and not is_integer(lhs) then
+      errors.raise("T2003", { value = lhs })
+    end
+    if not V.is_nothing(rhs) and not is_integer(rhs) then
+      errors.raise("T2004", { value = rhs })
+    end
+    if V.is_nothing(lhs) or V.is_nothing(rhs) then
+      return V.NOTHING
+    end
+    if lhs > rhs then
+      return V.NOTHING
+    end
+    local size = rhs - lhs + 1
+    if size > 1e7 then
+      errors.raise("D2014", { value = size })
+    end
+    local seq = V.sequence()
+    local idx = 0
+    for n = lhs, rhs do
+      idx = idx + 1
+      seq[idx] = n
+    end
+    return seq
   end
   errors.raise("D3001", { token = t })
 end
