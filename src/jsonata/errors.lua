@@ -15,6 +15,8 @@ local MESSAGES = {
   T1006 = "Attempted to invoke a non-function",
   T2001 = "The left side of an operator must evaluate to a number",
   T2002 = "The right side of an operator must evaluate to a number",
+  T2003 = "The left side of the range operator (..) must evaluate to an integer",
+  T2004 = "The right side of the range operator (..) must evaluate to an integer",
   T2007 = "Type mismatch when comparing values {{value}} and {{value2}} in order-by clause",
   T2008 = "The expressions within an order-by clause must evaluate to numeric or string values",
   T2010 = "Operands of comparison must both be numbers or both be strings",
@@ -23,6 +25,7 @@ local MESSAGES = {
   -- Dynamic / runtime errors
   D1001 = "Number out of range to be formatted",
   D1009 = "Multiple key definitions evaluate to same key: {{value}}",
+  D2014 = "The size of the sequence allocated by the range operator (..) must not exceed 1e7.  Attempted to allocate {{value}}.",
   D3001 = "Unsupported in M1",
   D3020 = "Third argument of function must be a positive integer",
   D3030 = "Unable to cast value to a number",
