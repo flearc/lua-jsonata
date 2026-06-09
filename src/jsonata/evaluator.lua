@@ -400,7 +400,7 @@ local function finalize_sequence(seq, keep_singleton)
 end
 M.finalize_sequence = finalize_sequence
 
-evaluate = function(node, input, env)
+local function _evaluate(node, input, env)
   local t = node.type
   if t == "number" or t == "string" or t == "boolean" then
     return node.value
@@ -562,6 +562,23 @@ evaluate = function(node, input, env)
     return seq
   end
   errors.raise("D3001", { token = t })
+end
+
+-- Thin explain seam. Assigns the forward-declared `evaluate` upvalue (line 8)
+-- that every recursive call site binds to, so the hook observes EVERY node
+-- (incl. HOF/lambda/transform). When no hook is on the env chain this is one
+-- nil-returning lookup then a direct call; the dispatch body above is unchanged.
+-- The `hook.pre` shape check stops a stray user variable named __explain_hook
+-- from being mistaken for a hook.
+evaluate = function(node, input, env)
+  local hook = env:lookup("__explain_hook")
+  if not (hook and hook.pre) then
+    return _evaluate(node, input, env)
+  end
+  hook.pre(node, input, env)
+  local result = _evaluate(node, input, env)
+  hook.post(node, input, env, result)
+  return result
 end
 
 -- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
