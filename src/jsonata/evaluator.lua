@@ -185,26 +185,6 @@ end
 -- evaluateSortExpression: per term, evaluate the key in each element's context;
 -- undefined sorts last; non-number/string -> T2008; mismatched types -> T2007;
 -- descending negates; first non-equal term decides.
-
--- Deep copy a value (objects/arrays recursively; scalars/NULL/NOTHING shared).
--- Used by the transform operator so it can mutate a copy without touching input.
-local function deep_clone(v)
-  if V.is_array(v) then
-    local out = V.array({})
-    for i = 1, #v do
-      out[i] = deep_clone(v[i])
-    end
-    return out
-  elseif V.is_object(v) then
-    local out = V.object()
-    for _, k in ipairs(V.obj_keys(v)) do
-      V.obj_set(out, k, deep_clone(V.obj_get(v, k)))
-    end
-    return out
-  end
-  return v
-end
-
 local function eval_sort_step(context, terms, env)
   local list = {}
   for j = 1, #context do
@@ -250,6 +230,25 @@ local function eval_sort_step(context, terms, env)
     seq[j] = sorted[j]
   end
   return seq
+end
+
+-- Deep copy a value (objects/arrays recursively; scalars/NULL/NOTHING shared).
+-- Used by the transform operator so it can mutate a copy without touching input.
+local function deep_clone(v)
+  if V.is_array(v) then
+    local out = V.array({})
+    for i = 1, #v do
+      out[i] = deep_clone(v[i])
+    end
+    return out
+  elseif V.is_object(v) then
+    local out = V.object()
+    for _, k in ipairs(V.obj_keys(v)) do
+      V.obj_set(out, k, deep_clone(V.obj_get(v, k)))
+    end
+    return out
+  end
+  return v
 end
 
 -- Group a context sequence by each pair's key expression, then evaluate each
