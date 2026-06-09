@@ -373,6 +373,14 @@ do
   end
 end
 
+-- Range operator: lhs .. rhs -> an integer sequence. Binding power 20.
+do
+  local s = symbol("..", 20)
+  s.led = function(p, t, left)
+    return { type = "range", lhs = left, rhs = p.expression(20), position = t.position }
+  end
+end
+
 -- Apply / chain operator. RHS is kept as AST: its call-shape decides whether
 -- the LHS is prepended as the first argument (evaluated in the evaluator).
 do
@@ -552,6 +560,11 @@ function M.process_ast(ast)
     return ast
   end
   if ast.type == "apply" then
+    ast.lhs = M.process_ast(ast.lhs)
+    ast.rhs = M.process_ast(ast.rhs)
+    return ast
+  end
+  if ast.type == "range" then
     ast.lhs = M.process_ast(ast.lhs)
     ast.rhs = M.process_ast(ast.rhs)
     return ast
