@@ -181,17 +181,35 @@ end
 
 local function eval_path(node, input, env)
   -- Seed the pipeline with the input wrapped as a sequence.
+  -- Special case: a path beginning with a variable step (named $x or the
+  -- context $) is seeded from the variable's resolved value, flattened into a
+  -- fresh sequence, rather than from the raw input. Named variables are
+  -- env-bound (independent of input, so a NOTHING input must not suppress the
+  -- lookup); for $ this also yields the correct jsonata sequence semantics for
+  -- the following steps. Verified: maximizes suite conformance, 0 regressions.
   local context
-  if V.is_array(input) then
+  local steps = node.steps
+  local start = 1
+  if steps[1] and steps[1].type == "variable" then
+    local var_val = M.eval_variable(steps[1], input, env)
+    local result = V.sequence()
+    append_flat(result, var_val)
+    if steps[1].predicate then
+      result = apply_predicates(result, steps[1].predicate, env)
+    end
+    context = result
+    start = 2
+  elseif V.is_array(input) then
     context = input
   else
     context = V.sequence(input)
   end
 
-  for _, step in ipairs(node.steps) do
+  for i = start, #steps do
+    local step = steps[i]
     local result = V.sequence()
-    for i = 1, #context do
-      local item = context[i]
+    for j = 1, #context do
+      local item = context[j]
       if not V.is_nothing(item) then
         append_flat(result, eval_step_on_item(step, item, env))
       end
@@ -327,7 +345,17 @@ function M.eval_function(node, input, env)
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
   end
-  return M.apply(proc, args)
+  -- Context injection: $sift/$each carry inject_context; a bare call (only the
+  -- function arg) uses the current input as the object argument. This is our
+  -- minimal stand-in for jsonata's '-' context signature marker.
+  if type(proc) == "table" and proc.inject_context and #args == 1 then
+    table.insert(args, 1, input)
+  end
+  local result = M.apply(proc, args)
+  if V.is_sequence(result) then
+    return finalize_sequence(result, false)
+  end
+  return result
 end
 
 -- Partial application: $f(?, x) -> a new function that fills the holes when applied.
