@@ -11,6 +11,7 @@ local MESSAGES = {
   -- Type errors
   T0410 = "Argument of function does not match function signature",
   T0412 = "Argument of function must be an array of strings",
+  T1003 = "Key in object structure must evaluate to a string; got: {{value}}",
   T1006 = "Attempted to invoke a non-function",
   T2001 = "The left side of an operator must evaluate to a number",
   T2002 = "The right side of an operator must evaluate to a number",
@@ -19,6 +20,7 @@ local MESSAGES = {
   T2010 = "Operands of comparison must both be numbers or both be strings",
   -- Dynamic / runtime errors
   D1001 = "Number out of range to be formatted",
+  D1009 = "Multiple key definitions evaluate to same key: {{value}}",
   D3001 = "Unsupported in M1",
   D3020 = "Third argument of function must be a positive integer",
   D3030 = "Unable to cast value to a number",

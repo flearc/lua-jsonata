@@ -232,6 +232,66 @@ local function eval_sort_step(context, terms, env)
   return seq
 end
 
+-- Group a context sequence by each pair's key expression, then evaluate each
+-- pair's value over its grouped data (the {} group-by operator). Returns a
+-- one-element sequence holding the result object. Matches jsonata's
+-- evaluateGroupExpression: string keys only (T1003); two different pairs
+-- producing the same key -> D1009; 1-item group -> single context, multi -> array.
+local function eval_group_step(context, pairs, env)
+  local items = {}
+  for j = 1, #context do
+    items[j] = context[j]
+  end
+  if #items == 0 then
+    items[1] = V.NOTHING
+  end
+
+  local order, groups = {}, {}
+  for _, item in ipairs(items) do
+    for pi, pair in ipairs(pairs) do
+      local key = evaluate(pair[1], item, env)
+      if not V.is_nothing(key) then
+        if V.typeof(key) ~= "string" then
+          errors.raise("T1003", { value = key })
+        end
+        local g = groups[key]
+        if g then
+          if g.exprIndex ~= pi then
+            errors.raise("D1009", { value = key })
+          end
+          g.data[#g.data + 1] = item
+        else
+          groups[key] = { data = { item }, exprIndex = pi }
+          order[#order + 1] = key
+        end
+      end
+    end
+  end
+
+  local result = V.object()
+  for _, key in ipairs(order) do
+    local g = groups[key]
+    local ctx
+    if #g.data == 1 then
+      ctx = g.data[1]
+    else
+      local copy = {}
+      for i = 1, #g.data do
+        copy[i] = g.data[i]
+      end
+      ctx = V.array(copy)
+    end
+    local value = evaluate(pairs[g.exprIndex][2], ctx, env)
+    if not V.is_nothing(value) then
+      V.obj_set(result, key, value)
+    end
+  end
+
+  local seq = V.sequence()
+  seq[1] = result
+  return seq
+end
+
 local function eval_path(node, input, env)
   -- Special case: when the first step produces a value from the WHOLE input
   -- rather than navigating into it per-element, evaluate it once and seed the
@@ -265,6 +325,8 @@ local function eval_path(node, input, env)
     local step = steps[i]
     if step.type == "sort" then
       context = eval_sort_step(context, step.terms, env)
+    elseif step.type == "group" then
+      context = eval_group_step(context, step.pairs, env)
     else
       local result = V.sequence()
       for j = 1, #context do
@@ -326,6 +388,13 @@ evaluate = function(node, input, env)
   elseif t == "variable" then
     return M.eval_variable(node, input, env)
   elseif t == "name" then
+    if V.is_array(input) then
+      local seq = V.sequence()
+      for k = 1, #input do
+        append_flat(seq, eval_step_on_item(node, input[k], env))
+      end
+      return finalize_sequence(seq, false)
+    end
     if not V.is_object(input) then
       return V.NOTHING
     end
