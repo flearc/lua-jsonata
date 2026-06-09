@@ -73,4 +73,8 @@ function Expression:evaluate(input, bindings)
   return adapter.to_lua(result)
 end
 
+function M.explain(source, input, stage)
+  return require("jsonata.explain").explain(source, input, stage)
+end
+
 return M

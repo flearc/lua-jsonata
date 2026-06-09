@@ -1,5 +1,6 @@
 local V = require("jsonata.value")
 local Tokenizer = require("jsonata.tokenizer")
+local Parser = require("jsonata.parser")
 
 local M = {}
 
@@ -248,5 +249,45 @@ local function render_eval(source, input)
 end
 
 M._render_eval = render_eval
+
+local function section(title, body)
+  return "== " .. title .. " ==\n" .. body
+end
+
+function M.explain(source, input, stage)
+  stage = stage or "all"
+  local parts = {}
+  local function add(title, fn)
+    local ok, body = pcall(fn)
+    if not ok then
+      body = "!! error: " .. render_error(body)
+    end
+    parts[#parts + 1] = section(title, body)
+  end
+  if stage == "tokens" or stage == "all" then
+    add("TOKENS", function()
+      return render_tokens(source)
+    end)
+  end
+  if stage == "ast" or stage == "all" then
+    add("AST (raw, pre-process_ast)", function()
+      return render_ast(Parser.parse_raw(source))
+    end)
+  end
+  if stage == "ast-norm" or stage == "all" then
+    add("AST (normalized, post-process_ast)", function()
+      return render_ast(Parser.parse(source))
+    end)
+  end
+  if stage == "eval" or stage == "all" then
+    add("EVAL", function()
+      return render_eval(source, input)
+    end)
+  end
+  if #parts == 0 then
+    error("unknown explain stage: " .. tostring(stage))
+  end
+  return table.concat(parts, "\n\n")
+end
 
 return M
