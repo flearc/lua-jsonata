@@ -352,6 +352,38 @@ do
   end
 end
 
+-- Order-by operator: lhs ^ ( [<|>] term (, [<|>] term)* ). Binding power 40 so
+-- the left path/index forms first (e.g. Account.Order.Product^(Price).SKU).
+do
+  local s = symbol("^", 40)
+  s.led = function(p, t, left)
+    if p.node.id ~= "(" then
+      errors.raise("S0203", { position = p.node.position, token = "(" })
+    end
+    p.advance() -- consume '('
+    local terms = {}
+    while true do
+      local descending = false
+      if p.node.id == "<" then
+        p.advance()
+      elseif p.node.id == ">" then
+        descending = true
+        p.advance()
+      end
+      terms[#terms + 1] = { expression = p.expression(0), descending = descending }
+      if p.node.id ~= "," then
+        break
+      end
+      p.advance() -- consume ','
+    end
+    if p.node.id ~= ")" then
+      errors.raise("S0203", { position = p.node.position, token = ")" })
+    end
+    p.advance() -- consume ')'
+    return { type = "sort", lhs = left, terms = terms, position = t.position }
+  end
+end
+
 function M.parse(source)
   local p = make_parser(source)
   p.advance()
@@ -387,6 +419,21 @@ function M.process_ast(ast)
     target.predicate = target.predicate or {}
     target.predicate[#target.predicate + 1] = M.process_ast(ast.filter)
     return { type = "path", steps = { target }, position = ast.position }
+  end
+  if ast.type == "sort" then
+    local target = M.process_ast(ast.lhs)
+    local sort_step = { type = "sort", terms = {}, position = ast.position }
+    for i, term in ipairs(ast.terms) do
+      sort_step.terms[i] = {
+        expression = M.process_ast(term.expression),
+        descending = term.descending,
+      }
+    end
+    if target.type == "path" then
+      target.steps[#target.steps + 1] = sort_step
+      return target
+    end
+    return { type = "path", steps = { target, sort_step }, position = ast.position }
   end
   if ast.type == "binary" and ast.value == "." then
     local steps = {}

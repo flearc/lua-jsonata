@@ -1,6 +1,7 @@
 local V = require("jsonata.value")
 local H = require("jsonata.functions.helpers")
 local errors = require("jsonata.errors")
+local sort = require("jsonata.sort")
 
 local R = {}
 
@@ -183,46 +184,6 @@ R.each = H.def(function(obj, fn)
 end, 2, 2)
 R.each.inject_context = true
 
--- Stable merge sort. comp_after(a, b) returns truthy when `a` should sort AFTER
--- `b`. Ties (comp_after false) keep the left element first -> stable. Matches
--- jsonata-js sort's merge logic.
-local function stable_sort(list, comp_after)
-  local n = #list
-  if n <= 1 then
-    return list
-  end
-  local mid = math.floor(n / 2)
-  local left, right = {}, {}
-  for i = 1, mid do
-    left[i] = list[i]
-  end
-  for i = mid + 1, n do
-    right[i - mid] = list[i]
-  end
-  left = stable_sort(left, comp_after)
-  right = stable_sort(right, comp_after)
-  local result = {}
-  local i, j = 1, 1
-  while i <= #left and j <= #right do
-    if comp_after(left[i], right[j]) then
-      result[#result + 1] = right[j]
-      j = j + 1
-    else
-      result[#result + 1] = left[i]
-      i = i + 1
-    end
-  end
-  while i <= #left do
-    result[#result + 1] = left[i]
-    i = i + 1
-  end
-  while j <= #right do
-    result[#result + 1] = right[j]
-    j = j + 1
-  end
-  return result
-end
-
 -- True iff every element of `arr` has JSONata type `t`.
 local function all_of_type(arr, t)
   for i = 1, #arr do
@@ -257,7 +218,7 @@ R.sort = H.def(function(arr, comparator)
       return a > b
     end
   end
-  return V.array(stable_sort(arr, comp_after))
+  return V.array(sort.stable_sort(arr, comp_after))
 end, 1, 2)
 
 return R

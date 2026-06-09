@@ -14,6 +14,8 @@ local MESSAGES = {
   T1006 = "Attempted to invoke a non-function",
   T2001 = "The left side of an operator must evaluate to a number",
   T2002 = "The right side of an operator must evaluate to a number",
+  T2007 = "Type mismatch when comparing values {{value}} and {{value2}} in order-by clause",
+  T2008 = "The expressions within an order-by clause must evaluate to numeric or string values",
   T2010 = "Operands of comparison must both be numbers or both be strings",
   -- Dynamic / runtime errors
   D1001 = "Number out of range to be formatted",
@@ -43,6 +45,7 @@ function M.raise(code, info)
     position = info.position,
     token = info.token,
     value = info.value,
+    value2 = info.value2,
     message = info.message or MESSAGES[code] or code,
   }, ERROR_MT)
   error(err, 0)
