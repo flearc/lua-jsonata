@@ -15,7 +15,7 @@ local KEYWORDS = {
 }
 
 -- Multi-character operators, longest first.
-local MULTI_OPS = { ":=", "!=", "<=", ">=", "~>", ">>", "**" }
+local MULTI_OPS = { ":=", "!=", "<=", ">=", "~>", ">>", "**", ".." }
 local SINGLE_OPS = "%.%[%]{}%(%)%+%-%*/%%=<>&|%^?:;,@#~"
 
 local ESCAPES = {
@@ -120,10 +120,20 @@ function Tokenizer:next()
     return self:_read_backtick()
   end
 
-  -- numbers
+  -- numbers (a decimal point must be followed by digits, so 1..5 is not "1.")
   if c:match("%d") then
-    local num = self.src:match("^%d+%.?%d*[eE]?[%+%-]?%d*", self.pos)
-    self.pos = self.pos + #num
+    local s = self.pos
+    local len = #self.src:match("^%d+", s)
+    local frac = self.src:match("^%.%d+", s + len)
+    if frac then
+      len = len + #frac
+    end
+    local exp = self.src:match("^[eE][%+%-]?%d+", s + len)
+    if exp then
+      len = len + #exp
+    end
+    local num = self.src:sub(s, s + len - 1)
+    self.pos = s + len
     return { type = "number", value = tonumber(num), position = start }
   end
 
