@@ -68,4 +68,75 @@ end
 
 M._render_value = render_value
 
+local CHILD_FIELDS = {
+  "lhs",
+  "rhs",
+  "expr",
+  "filter",
+  "expression",
+  "condition",
+  "then_expr",
+  "else_expr",
+  "procedure",
+  "body",
+  "pattern",
+  "update",
+  "delete",
+}
+local LIST_NODE_FIELDS = { "steps", "expressions", "arguments", "predicate" }
+
+local function node_header(node)
+  if node.value ~= nil then
+    return node.type .. " (value=" .. tostring(node.value) .. ")"
+  end
+  return node.type
+end
+
+local function render_ast(node, indent, label)
+  indent = indent or ""
+  label = label or ""
+  local lines = { indent .. label .. node_header(node) }
+  local function emit(s)
+    lines[#lines + 1] = s
+  end
+  local ci = indent .. "  "
+  for _, f in ipairs(CHILD_FIELDS) do
+    local c = node[f]
+    if type(c) == "table" and c.type then
+      emit(render_ast(c, ci, f .. ": "))
+    end
+  end
+  for _, f in ipairs(LIST_NODE_FIELDS) do
+    local list = node[f]
+    if type(list) == "table" and #list > 0 then
+      emit(ci .. f .. ":")
+      for i = 1, #list do
+        emit(render_ast(list[i], ci .. "  ", "[" .. i .. "] "))
+      end
+    end
+  end
+  if type(node.terms) == "table" and #node.terms > 0 then
+    emit(ci .. "terms:")
+    for i = 1, #node.terms do
+      local term = node.terms[i]
+      local dir = term.descending and " (descending)" or " (ascending)"
+      emit(render_ast(term.expression, ci .. "  ", "[" .. i .. "]" .. dir .. " "))
+    end
+  end
+  if type(node.pairs) == "table" and #node.pairs > 0 then
+    emit(ci .. "pairs:")
+    for i = 1, #node.pairs do
+      local pr = node.pairs[i]
+      emit(render_ast(pr[1], ci .. "  ", "[" .. i .. "] key: "))
+      emit(render_ast(pr[2], ci .. "  ", "[" .. i .. "] val: "))
+    end
+  end
+  if type(node.params) == "table" and #node.params > 0 then
+    emit(ci .. "params: " .. table.concat(node.params, ", "))
+  end
+  return table.concat(lines, "\n")
+end
+
+M._render_ast = render_ast
+
 return M
