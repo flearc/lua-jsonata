@@ -271,7 +271,16 @@ local function eval_group_step(context, pairs, env)
   local result = V.object()
   for _, key in ipairs(order) do
     local g = groups[key]
-    local ctx = (#g.data == 1) and g.data[1] or V.array(g.data)
+    local ctx
+    if #g.data == 1 then
+      ctx = g.data[1]
+    else
+      local copy = {}
+      for i = 1, #g.data do
+        copy[i] = g.data[i]
+      end
+      ctx = V.array(copy)
+    end
     local value = evaluate(pairs[g.exprIndex][2], ctx, env)
     if not V.is_nothing(value) then
       V.obj_set(result, key, value)
