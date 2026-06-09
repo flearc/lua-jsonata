@@ -155,4 +155,98 @@ end
 
 M._render_tokens = render_tokens
 
+local function render_error(err)
+  if type(err) == "table" then
+    local s = err.code or "error"
+    if err.position then
+      s = s .. " at position " .. tostring(err.position)
+    end
+    if err.token ~= nil then
+      s = s .. " (token: " .. tostring(err.token) .. ")"
+    end
+    return s
+  end
+  return tostring(err)
+end
+M._render_error = render_error
+
+local function node_label(node)
+  local t = node.type
+  if t == "name" then
+    return string.format('name "%s"', tostring(node.value))
+  elseif t == "variable" then
+    local v = node.value
+    if v == "" then
+      return "$"
+    end
+    return "$" .. tostring(v)
+  elseif t == "binary" or t == "unary" or t == "bind" then
+    return string.format('%s "%s"', t, tostring(node.value))
+  elseif t == "number" then
+    return "number " .. render_value(node.value)
+  elseif t == "string" then
+    return "string " .. render_value(node.value)
+  elseif t == "boolean" then
+    return "boolean " .. tostring(node.value)
+  end
+  return t
+end
+
+-- Build the {pre,post} hook that collects a trace tree during evaluation.
+-- Scope note: this observes every node evaluated through the evaluator's
+-- `evaluate` seam (the path node itself, predicates, operators, function calls,
+-- self-contained path steps, HOF/lambda/transform sub-evaluations). It does NOT
+-- show `name`/`variable` path steps that `eval_step_on_item` resolves inline
+-- (a deliberate evaluator fast path) -- use the `ast`/`ast-norm` stages to see
+-- the full step structure. This keeps the evaluation hot path untouched.
+local function make_eval_hook()
+  local root = { children = {} }
+  local stack = { root }
+  local hook = {
+    pre = function(node, input)
+      local e = { label = node_label(node), input = render_value(input), children = {} }
+      local top = stack[#stack]
+      top.children[#top.children + 1] = e
+      stack[#stack + 1] = e
+    end,
+    post = function(_, _, _, result)
+      local e = stack[#stack]
+      e.result = render_value(result)
+      stack[#stack] = nil
+    end,
+  }
+  return hook, root
+end
+
+local function render_trace_tree(entry, indent, lines)
+  lines[#lines + 1] = string.format("%s%s  $=%s  => %s", indent, entry.label, entry.input, entry.result or "?")
+  for _, child in ipairs(entry.children) do
+    render_trace_tree(child, indent .. "  ", lines)
+  end
+end
+
+local function render_eval(source, input)
+  local lines = {}
+  local ok, err = pcall(function()
+    local jsonata = require("jsonata")
+    local expr = jsonata.compile(source)
+    local hook, root = make_eval_hook()
+    expr._explain_hook = hook
+    expr:evaluate(input)
+    for _, child in ipairs(root.children) do
+      render_trace_tree(child, "  ", lines)
+    end
+    local top = root.children[#root.children]
+    if top then
+      lines[#lines + 1] = "=> " .. (top.result or "?")
+    end
+  end)
+  if not ok then
+    lines[#lines + 1] = "!! error: " .. render_error(err)
+  end
+  return table.concat(lines, "\n")
+end
+
+M._render_eval = render_eval
+
 return M
