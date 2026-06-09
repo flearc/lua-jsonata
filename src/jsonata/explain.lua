@@ -1,4 +1,5 @@
 local V = require("jsonata.value")
+local Tokenizer = require("jsonata.tokenizer")
 
 local M = {}
 
@@ -138,5 +139,20 @@ local function render_ast(node, indent, label)
 end
 
 M._render_ast = render_ast
+
+local function render_tokens(source)
+  local tk = Tokenizer.new(source)
+  local lines = {}
+  local i = 0
+  local t = tk:next()
+  while t ~= nil do
+    i = i + 1
+    lines[#lines + 1] = string.format("  [%d] %-9s %s", i, t.type, render_value(t.value))
+    t = tk:next()
+  end
+  return table.concat(lines, "\n")
+end
+
+M._render_tokens = render_tokens
 
 return M
