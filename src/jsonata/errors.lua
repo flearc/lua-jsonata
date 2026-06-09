@@ -23,6 +23,7 @@ local MESSAGES = {
   D3047 = "Argument of aggregate function must be an array of numbers",
   D3050 = "The second argument of reduce function must be a function with at least two arguments",
   D3060 = "$sqrt of a number that is less than zero",
+  D3070 = "The single argument of the $sort function must be an array of strings or numbers. Use a comparator function to sort other types.",
   D3100 = "The radix of $formatBase must be between 2 and 36",
   D3137 = "$error() function evaluated",
   D3138 = "The single() function expected exactly 1 matching result.  Instead it matched more.",

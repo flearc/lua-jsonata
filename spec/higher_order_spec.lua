@@ -130,3 +130,47 @@ describe("higher-order: $sift / $each", function()
     assert.is_nil(run("$each(missing, $uppercase)", {}))
   end)
 end)
+
+describe("higher-order: $sort", function()
+  it("sorts numbers ascending (numeric, not lexicographic)", function()
+    assert.are.same({ 1, 2, 3 }, run("$sort([1,3,2])"))
+    assert.are.same({ 1, 3, 11, 22 }, run("$sort([1,3,22,11])"))
+  end)
+
+  it("sorts strings ascending", function()
+    assert.are.same({ "apple", "banana", "cherry" }, run([[$sort(["banana","apple","cherry"])]]))
+  end)
+
+  it("wraps a scalar and returns an array (no singleton unwrap)", function()
+    assert.are.same({ 1 }, run("$sort(1)"))
+  end)
+
+  it("returns nothing for an absent array", function()
+    assert.is_nil(run("$sort(missing)", {}))
+  end)
+
+  it("raises D3070 for an array of objects with no comparator", function()
+    local ok, err = pcall(run, [[$sort([{"a":1},{"a":2}])]])
+    assert.is_false(ok)
+    assert.are.equal("D3070", err.code)
+  end)
+
+  it("raises D3070 for a mixed number/string array with no comparator", function()
+    local ok, err = pcall(run, [[$sort([1,"x"])]])
+    assert.is_false(ok)
+    assert.are.equal("D3070", err.code)
+  end)
+
+  it("sorts ascending/descending with a comparator", function()
+    assert.are.same({ 1, 2, 3 }, run("$sort([3,1,2], function($a,$b){ $a > $b })"))
+    assert.are.same({ 3, 2, 1 }, run("$sort([3,1,2], function($a,$b){ $a < $b })"))
+  end)
+
+  it("sorts objects by a key via a comparator", function()
+    assert.are.same({ 1, 3 }, run([[$sort([{"p":3},{"p":1}], function($a,$b){ $a.p > $b.p }).p]]))
+  end)
+
+  it("is stable: equal keys keep their original order", function()
+    assert.are.same({ "c", "a", "b" }, run([[$sort([{"k":1,"id":"a"},{"k":1,"id":"b"},{"k":0,"id":"c"}], function($a,$b){ $a.k > $b.k }).id]]))
+  end)
+end)
