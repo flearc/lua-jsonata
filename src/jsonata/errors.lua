@@ -18,6 +18,8 @@ local MESSAGES = {
   T2007 = "Type mismatch when comparing values {{value}} and {{value2}} in order-by clause",
   T2008 = "The expressions within an order-by clause must evaluate to numeric or string values",
   T2010 = "Operands of comparison must both be numbers or both be strings",
+  T2011 = "The insert/update clause of the transform expression must evaluate to an object",
+  T2012 = "The delete clause of the transform expression must evaluate to an array of strings",
   -- Dynamic / runtime errors
   D1001 = "Number out of range to be formatted",
   D1009 = "Multiple key definitions evaluate to same key: {{value}}",
