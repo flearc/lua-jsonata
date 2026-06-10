@@ -400,6 +400,73 @@ local function finalize_sequence(seq, keep_singleton)
 end
 M.finalize_sequence = finalize_sequence
 
+-- Recursively flatten nested arrays into `out` (jsonata's flatten()).
+local function flatten_into(value, out)
+  if V.is_array(value) then
+    for i = 1, #value do
+      flatten_into(value[i], out)
+    end
+  else
+    out[#out + 1] = value
+  end
+end
+
+-- Wildcard `*`: the values of an object (or the elements of an array); any
+-- array-typed value is flattened in. Mirrors jsonata evaluateWildcard. A
+-- non-object/non-array input yields an empty sequence (-> nothing).
+local function eval_wildcard(input)
+  local results = V.sequence()
+  local function add(value)
+    if V.is_array(value) then
+      flatten_into(value, results)
+    else
+      results[#results + 1] = value
+    end
+  end
+  if V.is_object(input) then
+    local keys = V.obj_keys(input)
+    for i = 1, #keys do
+      add(V.obj_get(input, keys[i]))
+    end
+  elseif V.is_array(input) then
+    for i = 1, #input do
+      add(input[i])
+    end
+  end
+  return results
+end
+
+-- Descendant `**`: collect every descendant value (XPath //*). Mirrors
+-- jsonata recurseDescendants: push every non-array node, recurse arrays and
+-- object values.
+local function recurse_descendants(input, results)
+  if not V.is_array(input) then
+    results[#results + 1] = input
+  end
+  if V.is_array(input) then
+    for i = 1, #input do
+      recurse_descendants(input[i], results)
+    end
+  elseif V.is_object(input) then
+    local keys = V.obj_keys(input)
+    for i = 1, #keys do
+      recurse_descendants(V.obj_get(input, keys[i]), results)
+    end
+  end
+end
+
+local function eval_descendant(input)
+  if V.is_nothing(input) then
+    return V.NOTHING
+  end
+  local results = V.sequence()
+  recurse_descendants(input, results)
+  if #results == 1 then
+    return results[1]
+  end
+  return results
+end
+
 local function _evaluate(node, input, env)
   local t = node.type
   if t == "number" or t == "string" or t == "boolean" then
@@ -560,6 +627,10 @@ local function _evaluate(node, input, env)
       seq[idx] = n
     end
     return seq
+  elseif t == "wildcard" then
+    return eval_wildcard(input)
+  elseif t == "descendant" then
+    return eval_descendant(input)
   end
   errors.raise("D3001", { token = t })
 end
