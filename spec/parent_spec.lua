@@ -5,6 +5,26 @@ local function run(src, input)
   return jsonata.compile(src):evaluate(input)
 end
 
+local ORDERS = {
+  Account = {
+    Order = {
+      {
+        OrderID = "order103",
+        Product = {
+          { ProductID = 1, Price = 10, Quantity = 2 },
+          { ProductID = 2, Price = 20, Quantity = 1 },
+        },
+      },
+      {
+        OrderID = "order104",
+        Product = {
+          { ProductID = 3, Price = 30, Quantity = 4 },
+        },
+      },
+    },
+  },
+}
+
 describe("parent %: ancestry wiring (process_ast)", function()
   it("anchors a parent slot onto the preceding step", function()
     local ast = parser.parse("a.b.%")
@@ -82,5 +102,38 @@ describe("parent %: parsing", function()
 
   it("keeps infix modulo intact", function()
     assert.are.equal(1, run("a % b", { a = 7, b = 3 }))
+  end)
+end)
+
+describe("parent %: evaluation core", function()
+  it("binds each item's own parent under fan-out (constructor step)", function()
+    assert.are.same({
+      { pid = 1, oid = "order103" },
+      { pid = 2, oid = "order103" },
+      { pid = 3, oid = "order104" },
+    }, run("Account.Order.Product.{ 'pid': ProductID, 'oid': %.OrderID }", ORDERS))
+  end)
+
+  it("supports %.% chains across two levels", function()
+    local data = { a = { name = "A", b = { name = "B", c = { 1, 2 } } } }
+    assert.are.same({
+      { v = 1, pb = "B", pa = "A" },
+      { v = 2, pb = "B", pa = "A" },
+    }, run("a.b.c.{ 'v': $, 'pb': %.name, 'pa': %.%.name }", data))
+  end)
+
+  it("evaluates % as a path step (navigate back up)", function()
+    assert.are.same({ b = { x = 1 } }, run("a.b.%", { a = { b = { x = 1 } } }))
+  end)
+
+  it("works inside a block with a variable binding", function()
+    assert.are.same({ "order103", "order103", "order104" }, run("Account.Order.Product.( $p := %; $p.OrderID )", ORDERS))
+    assert.are.same({ "order103", "order103", "order104" }, run("Account.Order.Product.( $x := 1; %.OrderID )", ORDERS))
+  end)
+
+  it("returns nothing when % is invoked as a function (then T1006)", function()
+    local ok, err = pcall(run, "a.( %() )", { a = { b = 1 } })
+    assert.is_false(ok)
+    assert.are.equal("T1006", err.code)
   end)
 end)
