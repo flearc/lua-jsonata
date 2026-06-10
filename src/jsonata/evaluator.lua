@@ -196,8 +196,17 @@ local function apply_predicates(seq, predicates, env, tuple_mode)
           next_seq[#next_seq + 1] = item
         end
       elseif pt == "array" then
+        -- jsonata: an ALL-numeric array selects by index; any other array
+        -- falls through to truthiness (non-empty -> keep the item).
+        local all_numbers = true
         for j = 1, #pv do
-          if V.typeof(pv[j]) == "number" then
+          if V.typeof(pv[j]) ~= "number" then
+            all_numbers = false
+            break
+          end
+        end
+        if all_numbers then
+          for j = 1, #pv do
             local idx = math.floor(pv[j])
             if idx < 0 then
               idx = #current + idx
@@ -207,6 +216,8 @@ local function apply_predicates(seq, predicates, env, tuple_mode)
               break
             end
           end
+        elseif functions.truthy(pv) then
+          next_seq[#next_seq + 1] = item
         end
       elseif functions.truthy(pv) then
         next_seq[#next_seq + 1] = item
@@ -222,7 +233,9 @@ end
 -- evaluateSortExpression: per term, evaluate the key in each element's context;
 -- undefined sorts last; non-number/string -> T2008; mismatched types -> T2007;
 -- descending negates; first non-equal term decides.
-local function eval_sort_step(context, terms, env)
+-- In tuple_mode, sort terms evaluate against tuple["@"] with a per-tuple frame
+-- (ancestor labels visible), mirroring jsonata's isTupleSort.
+local function eval_sort_step(context, terms, env, tuple_mode)
   local list = {}
   for j = 1, #context do
     list[j] = context[j]
@@ -230,8 +243,13 @@ local function eval_sort_step(context, terms, env)
   local comp_after = function(a, b)
     local comp = 0
     for _, term in ipairs(terms) do
-      local aa = evaluate(term.expression, a, env)
-      local bb = evaluate(term.expression, b, env)
+      local ca, ea, cb, eb = a, env, b, env
+      if tuple_mode then
+        ca, ea = a["@"], create_frame_from_tuple(env, a)
+        cb, eb = b["@"], create_frame_from_tuple(env, b)
+      end
+      local aa = evaluate(term.expression, ca, ea)
+      local bb = evaluate(term.expression, cb, eb)
       if V.is_nothing(aa) then
         comp = V.is_nothing(bb) and 0 or 1
       elseif V.is_nothing(bb) then
@@ -487,6 +505,9 @@ local function eval_path_tuple(node, input, env)
     elseif step.type == "group" then
       -- Ancestry does not flow into group pairs (matches jsonata's parser,
       -- which never pushes ancestry through `{` group-by); consume values.
+      -- NB: the `{k:v}` OBJECT constructor is type "object" (not "group") and
+      -- reaches the else branch below, where the per-tuple frame keeps
+      -- ancestry live.
       local values = V.sequence()
       for j = 1, #tuples do
         values[#values + 1] = tuples[j]["@"]

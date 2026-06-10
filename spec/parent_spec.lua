@@ -137,3 +137,34 @@ describe("parent %: evaluation core", function()
     assert.are.equal("T1006", err.code)
   end)
 end)
+
+describe("parent %: predicates, sort, nested paths", function()
+  it("filters by parent fields in a predicate", function()
+    assert.are.equal(3, run("Account.Order.Product[%.OrderID='order104'].ProductID", ORDERS))
+    assert.are.same({ 1, 2 }, run("Account.Order.Product[%.OrderID='order103'].ProductID", ORDERS))
+  end)
+
+  it("filters with %.% inside a predicate (two levels)", function()
+    assert.are.same({ 10, 20 }, run("Account.Order.Product.Price[%.%.OrderID='order103']", ORDERS))
+  end)
+
+  it("keeps items when a deep parent chain yields a truthy non-numeric array", function()
+    -- %.%.% climbs to Account; .Order is an array of objects -> truthy in
+    -- jsonata's filter semantics (only an ALL-numeric array means indexing)
+    assert.are.same({ 10, 20, 30 }, run("Account.Order.Product.Price[%.%.%.Order]", ORDERS))
+  end)
+
+  it("sorts by a parent field", function()
+    -- ProductID^(%.Price): ids ordered by their product's price
+    assert.are.same({ 1, 2, 3 }, run("Account.Order.Product.ProductID^(%.Price)", ORDERS))
+    assert.are.same({ 3, 2, 1 }, run("Account.Order.Product.ProductID^(>%.Price)", ORDERS))
+  end)
+
+  it("propagates tuples out of a parenthesised nested path", function()
+    assert.are.equal(3, run("(Account.Order.Product)[%.OrderID='order104'].ProductID", ORDERS))
+  end)
+
+  it("navigates back mid-path: Price.% are the products", function()
+    assert.are.same({ 1, 2, 3 }, run("Account.Order.Product.Price.%.ProductID", ORDERS))
+  end)
+end)
