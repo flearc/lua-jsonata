@@ -336,11 +336,17 @@ local function eval_path(node, input, env)
   -- table to V.object (empty arrays and objects are indistinguishable), so the
   -- correct "undefined" result for variables/case009 ([1,2,3].$v, v=[]) only
   -- falls out from the nothing-guard skipping the array step.
+  -- wildcard/descendant as the FIRST step must run once over the whole input
+  -- (jsonata evaluates the first step against the input directly). Without this,
+  -- array input would map the operator per-element, descending one level too far
+  -- (e.g. `*.b` over `[{b:1},{b:2}]` must spread the elements, not their values).
   local first_is_self_contained = steps[1]
     and (
       steps[1].type == "variable"
       or steps[1].type == "function"
       or steps[1].type == "path"
+      or steps[1].type == "wildcard"
+      or steps[1].type == "descendant"
       or (steps[1].type == "array" and not (steps[2] and steps[2].type == "variable"))
     )
   if first_is_self_contained then
@@ -426,20 +432,27 @@ local function eval_wildcard(input)
   if V.is_object(input) then
     local keys = V.obj_keys(input)
     for i = 1, #keys do
-      add(V.obj_get(input, keys[i]))
+      local value = V.obj_get(input, keys[i])
+      if not V.is_nothing(value) then
+        add(value)
+      end
     end
   elseif V.is_array(input) then
     for i = 1, #input do
       add(input[i])
     end
   end
-  return results
+  -- Unwrap a singleton (and empty -> nothing) like jsonata's result handling.
+  return finalize_sequence(results)
 end
 
 -- Descendant `**`: collect every descendant value (XPath //*). Mirrors
 -- jsonata recurseDescendants: push every non-array node, recurse arrays and
 -- object values.
 local function recurse_descendants(input, results)
+  if V.is_nothing(input) then
+    return
+  end
   if not V.is_array(input) then
     results[#results + 1] = input
   end
@@ -461,10 +474,7 @@ local function eval_descendant(input)
   end
   local results = V.sequence()
   recurse_descendants(input, results)
-  if #results == 1 then
-    return results[1]
-  end
-  return results
+  return finalize_sequence(results)
 end
 
 local function _evaluate(node, input, env)

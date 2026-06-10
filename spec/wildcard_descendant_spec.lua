@@ -43,6 +43,16 @@ describe("wildcard *", function()
     assert.are.equal(5, run("$sum(*[$ > 1])", { a = 1, b = 2, c = 3 }))
   end)
 
+  it("unwraps a singleton result to a scalar", function()
+    assert.are.equal(42, run("*", { a = 42 }))
+  end)
+
+  it("as the first path step over array input runs once (spreads elements)", function()
+    -- must apply to the whole array (its elements), not descend per-element
+    assert.are.same({ 2, 4 }, run("*.b", { { a = 1, b = 2 }, { a = 3, b = 4 } }))
+    assert.are.same({ 2, 3 }, run("*[$ > 1]", { 1, 2, 3 }))
+  end)
+
   it("yields nothing for a non-object/non-array input", function()
     assert.is_nil(run("foo.bar.*", DATA)) -- bar is 42, a scalar
     assert.is_nil(run("$sum.*", {})) -- a function value
