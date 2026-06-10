@@ -485,38 +485,40 @@ function M.parse(source)
   return M.process_ast(M.parse_raw(source))
 end
 
-local function flatten_path(node, steps)
+local process_ast -- forward declaration (ctx-threaded internal)
+
+local function flatten_path(node, steps, ctx)
   if node.type == "binary" and node.value == "." then
-    flatten_path(node.lhs, steps)
-    flatten_path(node.rhs, steps)
+    flatten_path(node.lhs, steps, ctx)
+    flatten_path(node.rhs, steps, ctx)
   else
-    steps[#steps + 1] = M.process_ast(node)
+    steps[#steps + 1] = process_ast(node, ctx)
   end
 end
 
-function M.process_ast(ast)
+process_ast = function(ast, ctx)
   if ast == nil then
     return ast
   end
   if ast.type == "predicate" then
-    local target = M.process_ast(ast.expr)
+    local target = process_ast(ast.expr, ctx)
     if target.type == "path" then
       local last = target.steps[#target.steps]
       last.predicate = last.predicate or {}
-      last.predicate[#last.predicate + 1] = M.process_ast(ast.filter)
+      last.predicate[#last.predicate + 1] = process_ast(ast.filter, ctx)
       return target
     end
     -- Wrap a non-path target as a single-step path carrying the predicate.
     target.predicate = target.predicate or {}
-    target.predicate[#target.predicate + 1] = M.process_ast(ast.filter)
+    target.predicate[#target.predicate + 1] = process_ast(ast.filter, ctx)
     return { type = "path", steps = { target }, position = ast.position }
   end
   if ast.type == "sort" then
-    local target = M.process_ast(ast.lhs)
+    local target = process_ast(ast.lhs, ctx)
     local sort_step = { type = "sort", terms = {}, position = ast.position }
     for i, term in ipairs(ast.terms) do
       sort_step.terms[i] = {
-        expression = M.process_ast(term.expression),
+        expression = process_ast(term.expression, ctx),
         descending = term.descending,
       }
     end
@@ -527,10 +529,10 @@ function M.process_ast(ast)
     return { type = "path", steps = { target, sort_step }, position = ast.position }
   end
   if ast.type == "group" then
-    local target = M.process_ast(ast.lhs)
+    local target = process_ast(ast.lhs, ctx)
     local group_step = { type = "group", pairs = {}, position = ast.position }
     for i, pair in ipairs(ast.pairs) do
-      group_step.pairs[i] = { M.process_ast(pair[1]), M.process_ast(pair[2]) }
+      group_step.pairs[i] = { process_ast(pair[1], ctx), process_ast(pair[2], ctx) }
     end
     if target.type == "path" then
       target.steps[#target.steps + 1] = group_step
@@ -540,73 +542,80 @@ function M.process_ast(ast)
   end
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
-    flatten_path(ast, steps)
+    flatten_path(ast, steps, ctx)
     return { type = "path", steps = steps, position = ast.position }
   end
   if ast.type == "binary" or ast.type == "bind" then
-    ast.lhs = M.process_ast(ast.lhs)
-    ast.rhs = M.process_ast(ast.rhs)
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
     return ast
   end
   if ast.type == "unary" then
-    ast.expression = M.process_ast(ast.expression)
+    ast.expression = process_ast(ast.expression, ctx)
     return ast
   end
   if ast.type == "block" then
     for i, e in ipairs(ast.expressions) do
-      ast.expressions[i] = M.process_ast(e)
+      ast.expressions[i] = process_ast(e, ctx)
     end
     return ast
   end
   if ast.type == "array" then
     for i, e in ipairs(ast.expressions) do
-      ast.expressions[i] = M.process_ast(e)
+      ast.expressions[i] = process_ast(e, ctx)
     end
     return ast
   end
   if ast.type == "object" then
     for _, pair in ipairs(ast.pairs) do
-      pair[1] = M.process_ast(pair[1])
-      pair[2] = M.process_ast(pair[2])
+      pair[1] = process_ast(pair[1], ctx)
+      pair[2] = process_ast(pair[2], ctx)
     end
     return ast
   end
   if ast.type == "condition" then
-    ast.condition = M.process_ast(ast.condition)
-    ast.then_expr = M.process_ast(ast.then_expr)
-    ast.else_expr = M.process_ast(ast.else_expr)
+    ast.condition = process_ast(ast.condition, ctx)
+    ast.then_expr = process_ast(ast.then_expr, ctx)
+    ast.else_expr = process_ast(ast.else_expr, ctx)
     return ast
   end
   if ast.type == "function" then
-    ast.procedure = M.process_ast(ast.procedure)
+    ast.procedure = process_ast(ast.procedure, ctx)
     for i, a in ipairs(ast.arguments) do
-      ast.arguments[i] = M.process_ast(a)
+      ast.arguments[i] = process_ast(a, ctx)
     end
     return ast
   end
   if ast.type == "lambda" then
-    ast.body = M.process_ast(ast.body)
+    ast.body = process_ast(ast.body, ctx)
     return ast
   end
   if ast.type == "apply" then
-    ast.lhs = M.process_ast(ast.lhs)
-    ast.rhs = M.process_ast(ast.rhs)
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
     return ast
   end
   if ast.type == "range" then
-    ast.lhs = M.process_ast(ast.lhs)
-    ast.rhs = M.process_ast(ast.rhs)
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
     return ast
   end
   if ast.type == "transform" then
-    ast.pattern = M.process_ast(ast.pattern)
-    ast.update = M.process_ast(ast.update)
+    ast.pattern = process_ast(ast.pattern, ctx)
+    ast.update = process_ast(ast.update, ctx)
     if ast.delete then
-      ast.delete = M.process_ast(ast.delete)
+      ast.delete = process_ast(ast.delete, ctx)
     end
     return ast
   end
   return ast
+end
+
+-- Public entry: mints fresh per-parse ancestry state (mirrors jsonata-js,
+-- where ancestry/ancestorLabel live in the per-call parser closure).
+function M.process_ast(ast)
+  local ctx = { ancestry = {}, ancestor_label = 0 }
+  return process_ast(ast, ctx)
 end
 
 -- Exposed for later tasks to register operators.
