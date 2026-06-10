@@ -501,7 +501,8 @@ seek_parent = function(node, slot, ctx)
       if node.ancestor == nil then
         node.ancestor = slot
       else
-        -- two % anchored on the same step share one label
+        -- two % anchored on the same step share one label, so the evaluator
+        -- writes ONE tuple binding that both % references resolve through
         ctx.ancestry[slot.index].slot.label = node.ancestor.label
         node.ancestor = slot
       end
@@ -531,6 +532,12 @@ seek_parent = function(node, slot, ctx)
 end
 
 -- Propagate unresolved slots from a child node up to its container.
+-- Invariant: a parent node's own seekingParent is nil when this is called
+-- (parent nodes are terminals); the in-place append to an adopted array is
+-- therefore safe and mirrors jsonata's aliasing.
+-- Field name kept camelCase (`seekingParent`) deliberately: it aliases the
+-- jsonata-js field 1:1 for port traceability; it is parser-internal transit
+-- state, never read by the evaluator.
 local function push_ancestry(result, value)
   if value == nil then
     return
@@ -664,6 +671,9 @@ process_ast = function(ast, ctx)
     return path
   end
   if ast.type == "group" then
+    -- NB: jsonata-js deliberately does NOT propagate % ancestry through {}
+    -- group-by pairs (its '{' case never calls pushAncestry); % slots inside
+    -- group pairs are faithfully orphaned -> runtime lookup miss -> undefined.
     local target = process_ast(ast.lhs, ctx)
     local group_step = { type = "group", pairs = {}, position = ast.position }
     for i, pair in ipairs(ast.pairs) do

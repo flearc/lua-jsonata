@@ -55,6 +55,22 @@ describe("parent %: ancestry wiring (process_ast)", function()
     assert.is_truthy(b.ancestor)
     assert.is_truthy(b.tuple)
   end)
+
+  it("shares one label when two % anchor on the same step", function()
+    -- (%.x + %.y) parses as a binary + node (not a block); each operand is a
+    -- path whose first step is a parent node; both must share the label from b.
+    local ast = parser.parse("a.b.(%.x + %.y)")
+    local b = ast.steps[2]
+    assert.is_truthy(b.ancestor)
+    -- both parent nodes inside the block must resolve through the SAME label
+    local plus = ast.steps[3] -- binary + (the parenthesised expression)
+    local p1 = plus.lhs.steps[1]
+    local p2 = plus.rhs.steps[1]
+    assert.are.equal("parent", p1.type)
+    assert.are.equal("parent", p2.type)
+    assert.are.equal(p1.slot.label, p2.slot.label)
+    assert.are.equal(b.ancestor.label, p1.slot.label)
+  end)
 end)
 
 describe("parent %: parsing", function()
