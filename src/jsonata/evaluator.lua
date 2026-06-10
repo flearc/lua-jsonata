@@ -488,6 +488,14 @@ local function eval_path_tuple(node, input, env)
       append_flat(seeded, var_val)
       tuples = values_to_tuples(seeded)
     end
+    if steps[1].ancestor then
+      -- the self-contained step ran against the whole path input: that input
+      -- is the ancestor every seeded tuple binds (jsonata binds the step's
+      -- input item per tuple; for step 1 that is the path input itself)
+      for j = 1, #tuples do
+        tuples[j][steps[1].ancestor.label] = input
+      end
+    end
     if steps[1].predicate then
       tuples = apply_predicates(tuples, steps[1].predicate, env, true)
     end

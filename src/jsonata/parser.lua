@@ -566,6 +566,10 @@ end
 -- positional pass. Step 1 is never a laststep in jsonata's left-assoc
 -- assembly, so its seekingParent is (faithfully) NOT read; a parent node AT
 -- step 1 is jsonata's lhs-seeding case (walks to index 0 -> path.seekingParent).
+-- KNOWN DIVERGENCE: our parser unwraps single-expression parens (M1 design),
+-- so shapes like `a.b.((1; %).c)` flatten into one path and the block step's
+-- strand resolves here; jsonata-js keeps the block boundary and orphans it
+-- (undefined). Exotic; we resolve MORE than jsonata, never less.
 local function resolve_ancestry(path, ctx)
   local steps = path.steps
   for i = 1, #steps do
@@ -760,6 +764,9 @@ process_ast = function(ast, ctx)
   if ast.type == "apply" then
     ast.lhs = process_ast(ast.lhs, ctx)
     ast.rhs = process_ast(ast.rhs, ctx)
+    -- NB: no push_ancestry here. jsonata-js does push through '~>' but no
+    -- observable divergence exists (verified against a jsonata-js oracle);
+    -- % inside an apply rhs is lambda-scope and orphans identically.
     return ast
   end
   if ast.type == "range" then
@@ -770,6 +777,8 @@ process_ast = function(ast, ctx)
     return ast
   end
   if ast.type == "transform" then
+    -- NB: no push_ancestry (matches jsonata-js: transform never propagates
+    -- ancestry).
     ast.pattern = process_ast(ast.pattern, ctx)
     ast.update = process_ast(ast.update, ctx)
     if ast.delete then

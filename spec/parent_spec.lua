@@ -136,6 +136,10 @@ describe("parent %: evaluation core", function()
     assert.is_false(ok)
     assert.are.equal("T1006", err.code)
   end)
+
+  it("binds the ancestor for a self-contained first step (wildcard)", function()
+    assert.are.same({ a = { b = 1 } }, run("*.%", { a = { b = 1 } }))
+  end)
 end)
 
 describe("parent %: predicates, sort, nested paths", function()
