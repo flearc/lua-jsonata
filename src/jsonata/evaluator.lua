@@ -336,11 +336,17 @@ local function eval_path(node, input, env)
   -- table to V.object (empty arrays and objects are indistinguishable), so the
   -- correct "undefined" result for variables/case009 ([1,2,3].$v, v=[]) only
   -- falls out from the nothing-guard skipping the array step.
+  -- wildcard/descendant as the FIRST step must run once over the whole input
+  -- (jsonata evaluates the first step against the input directly). Without this,
+  -- array input would map the operator per-element, descending one level too far
+  -- (e.g. `*.b` over `[{b:1},{b:2}]` must spread the elements, not their values).
   local first_is_self_contained = steps[1]
     and (
       steps[1].type == "variable"
       or steps[1].type == "function"
       or steps[1].type == "path"
+      or steps[1].type == "wildcard"
+      or steps[1].type == "descendant"
       or (steps[1].type == "array" and not (steps[2] and steps[2].type == "variable"))
     )
   if first_is_self_contained then
@@ -399,6 +405,77 @@ local function finalize_sequence(seq, keep_singleton)
   return seq
 end
 M.finalize_sequence = finalize_sequence
+
+-- Recursively flatten nested arrays into `out` (jsonata's flatten()).
+local function flatten_into(value, out)
+  if V.is_array(value) then
+    for i = 1, #value do
+      flatten_into(value[i], out)
+    end
+  else
+    out[#out + 1] = value
+  end
+end
+
+-- Wildcard `*`: the values of an object (or the elements of an array); any
+-- array-typed value is flattened in. Mirrors jsonata evaluateWildcard. A
+-- non-object/non-array input yields an empty sequence (-> nothing).
+local function eval_wildcard(input)
+  local results = V.sequence()
+  local function add(value)
+    if V.is_array(value) then
+      flatten_into(value, results)
+    else
+      results[#results + 1] = value
+    end
+  end
+  if V.is_object(input) then
+    local keys = V.obj_keys(input)
+    for i = 1, #keys do
+      local value = V.obj_get(input, keys[i])
+      if not V.is_nothing(value) then
+        add(value)
+      end
+    end
+  elseif V.is_array(input) then
+    for i = 1, #input do
+      add(input[i])
+    end
+  end
+  -- Unwrap a singleton (and empty -> nothing) like jsonata's result handling.
+  return finalize_sequence(results)
+end
+
+-- Descendant `**`: collect every descendant value (XPath //*). Mirrors
+-- jsonata recurseDescendants: push every non-array node, recurse arrays and
+-- object values.
+local function recurse_descendants(input, results)
+  if V.is_nothing(input) then
+    return
+  end
+  if not V.is_array(input) then
+    results[#results + 1] = input
+  end
+  if V.is_array(input) then
+    for i = 1, #input do
+      recurse_descendants(input[i], results)
+    end
+  elseif V.is_object(input) then
+    local keys = V.obj_keys(input)
+    for i = 1, #keys do
+      recurse_descendants(V.obj_get(input, keys[i]), results)
+    end
+  end
+end
+
+local function eval_descendant(input)
+  if V.is_nothing(input) then
+    return V.NOTHING
+  end
+  local results = V.sequence()
+  recurse_descendants(input, results)
+  return finalize_sequence(results)
+end
 
 local function _evaluate(node, input, env)
   local t = node.type
@@ -560,6 +637,10 @@ local function _evaluate(node, input, env)
       seq[idx] = n
     end
     return seq
+  elseif t == "wildcard" then
+    return eval_wildcard(input)
+  elseif t == "descendant" then
+    return eval_descendant(input)
   end
   errors.raise("D3001", { token = t })
 end

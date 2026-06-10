@@ -446,6 +446,22 @@ do
   end
 end
 
+do
+  local s = symbol("*", 60)
+  s.nud = function(p, t)
+    return { type = "wildcard", position = t.position }
+  end
+end
+
+-- Descendant `**`: a prefix-only terminal (no led). `**` already tokenizes via
+-- MULTI_OPS; this registers its symbol so it parses to a descendant node.
+do
+  local s = symbol("**")
+  s.nud = function(p, t)
+    return { type = "descendant", position = t.position }
+  end
+end
+
 function M.parse_raw(source)
   local p = make_parser(source)
   p.advance()
