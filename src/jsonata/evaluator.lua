@@ -378,6 +378,11 @@ local function eval_path(node, input, env)
       context = eval_sort_step(context, step.terms, env)
     elseif step.type == "group" then
       context = eval_group_step(context, step.pairs, env)
+    elseif step.type == "parent" then
+      -- `parent` is not yet implemented; raise even when context is empty
+      -- so that expressions like `$$.%` (where $$ resolves to nothing) still
+      -- produce a structured error rather than silently returning undefined.
+      errors.raise("D3001", { token = "parent" })
     else
       local result = V.sequence()
       for j = 1, #context do
@@ -641,6 +646,9 @@ local function _evaluate(node, input, env)
     return eval_wildcard(input)
   elseif t == "descendant" then
     return eval_descendant(input)
+  elseif t == "parent" then
+    -- `parent` resolution is not yet implemented (M3b Task 4+).
+    errors.raise("D3001", { token = t })
   end
   errors.raise("D3001", { token = t })
 end

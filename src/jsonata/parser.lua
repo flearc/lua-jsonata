@@ -462,6 +462,15 @@ do
   end
 end
 
+-- Parent `%`: a prefix-only terminal in step position; `%` keeps its infix
+-- modulo led (same nud/led coexistence as `*` wildcard vs multiply).
+do
+  local s = symbol("%", 60)
+  s.nud = function(p, t)
+    return { type = "parent", position = t.position }
+  end
+end
+
 function M.parse_raw(source)
   local p = make_parser(source)
   p.advance()
