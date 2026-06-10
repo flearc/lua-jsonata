@@ -487,6 +487,112 @@ end
 
 local process_ast -- forward declaration (ctx-threaded internal)
 
+-- ===== `%` ancestry machinery (M3b), ported from jsonata-js v2.2.1 =====
+-- Slots are SHARED, MUTATED references — never copy a slot table.
+
+local seek_parent
+
+-- Walk one slot through one node, anchoring when level reaches 0.
+seek_parent = function(node, slot, ctx)
+  local t = node.type
+  if t == "name" or t == "wildcard" then
+    slot.level = slot.level - 1
+    if slot.level == 0 then
+      if node.ancestor == nil then
+        node.ancestor = slot
+      else
+        -- two % anchored on the same step share one label
+        ctx.ancestry[slot.index].slot.label = node.ancestor.label
+        node.ancestor = slot
+      end
+      node.tuple = true
+    end
+  elseif t == "parent" then
+    slot.level = slot.level + 1
+  elseif t == "block" then
+    -- resolve through the block's LAST expression only
+    if #node.expressions > 0 then
+      node.tuple = true
+      slot = seek_parent(node.expressions[#node.expressions], slot, ctx)
+    end
+  elseif t == "path" then
+    node.tuple = true
+    local index = #node.steps
+    slot = seek_parent(node.steps[index], slot, ctx)
+    index = index - 1
+    while slot.level > 0 and index >= 1 do
+      slot = seek_parent(node.steps[index], slot, ctx)
+      index = index - 1
+    end
+  else
+    errors.raise("S0217", { token = t, position = node.position })
+  end
+  return slot
+end
+
+-- Propagate unresolved slots from a child node up to its container.
+local function push_ancestry(result, value)
+  if value == nil then
+    return
+  end
+  if value.seekingParent ~= nil or value.type == "parent" then
+    local slots = value.seekingParent or {}
+    if value.type == "parent" then
+      slots[#slots + 1] = value.slot
+    end
+    if result.seekingParent == nil then
+      result.seekingParent = slots
+    else
+      for _, s in ipairs(slots) do
+        result.seekingParent[#result.seekingParent + 1] = s
+      end
+    end
+  end
+end
+
+-- Resolve every step's pending slots against the steps before it. jsonata
+-- resolves incrementally at each `.` level (each step is briefly the last
+-- step of a sub-path); our flatten-then-wrap assembly emulates that with one
+-- positional pass. Step 1 is never a laststep in jsonata's left-assoc
+-- assembly, so its seekingParent is (faithfully) NOT read; a parent node AT
+-- step 1 is jsonata's lhs-seeding case (walks to index 0 -> path.seekingParent).
+local function resolve_ancestry(path, ctx)
+  local steps = path.steps
+  for i = 1, #steps do
+    local st = steps[i]
+    local slots = {}
+    if i >= 2 and st.seekingParent then
+      for _, s in ipairs(st.seekingParent) do
+        slots[#slots + 1] = s
+      end
+    end
+    if st.type == "parent" then
+      slots[#slots + 1] = st.slot
+    end
+    for _, slot in ipairs(slots) do
+      local idx = i - 1
+      while slot.level > 0 do
+        if idx < 1 then
+          if path.seekingParent == nil then
+            path.seekingParent = { slot }
+          else
+            path.seekingParent[#path.seekingParent + 1] = slot
+          end
+          break
+        end
+        local step = steps[idx]
+        idx = idx - 1
+        -- contiguous focus-bound steps count as one level (future @ support)
+        while idx >= 1 and step.focus and steps[idx].focus do
+          step = steps[idx]
+          idx = idx - 1
+        end
+        slot = seek_parent(step, slot, ctx)
+      end
+    end
+  end
+end
+
 local function flatten_path(node, steps, ctx)
   if node.type == "binary" and node.value == "." then
     flatten_path(node.lhs, steps, ctx)
@@ -500,33 +606,57 @@ process_ast = function(ast, ctx)
   if ast == nil then
     return ast
   end
+  if ast.type == "parent" then
+    ast.slot = {
+      label = "!" .. ctx.ancestor_label,
+      level = 1,
+      index = #ctx.ancestry + 1,
+    }
+    ctx.ancestor_label = ctx.ancestor_label + 1
+    ctx.ancestry[#ctx.ancestry + 1] = ast
+    return ast
+  end
   if ast.type == "predicate" then
     local target = process_ast(ast.expr, ctx)
+    local filter = process_ast(ast.filter, ctx)
+    local step, path
     if target.type == "path" then
-      local last = target.steps[#target.steps]
-      last.predicate = last.predicate or {}
-      last.predicate[#last.predicate + 1] = process_ast(ast.filter, ctx)
-      return target
+      path = target
+      step = target.steps[#target.steps]
+    else
+      step = target
+      path = { type = "path", steps = { target }, position = ast.position }
     end
-    -- Wrap a non-path target as a single-step path carrying the predicate.
-    target.predicate = target.predicate or {}
-    target.predicate[#target.predicate + 1] = process_ast(ast.filter, ctx)
-    return { type = "path", steps = { target }, position = ast.position }
+    if filter.seekingParent ~= nil then
+      for _, slot in ipairs(filter.seekingParent) do
+        if slot.level == 1 then
+          seek_parent(step, slot, ctx)
+        else
+          slot.level = slot.level - 1
+        end
+      end
+      push_ancestry(step, filter)
+    end
+    step.predicate = step.predicate or {}
+    step.predicate[#step.predicate + 1] = filter
+    return path
   end
   if ast.type == "sort" then
     local target = process_ast(ast.lhs, ctx)
     local sort_step = { type = "sort", terms = {}, position = ast.position }
     for i, term in ipairs(ast.terms) do
-      sort_step.terms[i] = {
-        expression = process_ast(term.expression, ctx),
-        descending = term.descending,
-      }
+      local expression = process_ast(term.expression, ctx)
+      push_ancestry(sort_step, expression)
+      sort_step.terms[i] = { expression = expression, descending = term.descending }
     end
     if target.type == "path" then
       target.steps[#target.steps + 1] = sort_step
+      resolve_ancestry(target, ctx)
       return target
     end
-    return { type = "path", steps = { target, sort_step }, position = ast.position }
+    local path = { type = "path", steps = { target, sort_step }, position = ast.position }
+    resolve_ancestry(path, ctx)
+    return path
   end
   if ast.type == "group" then
     local target = process_ast(ast.lhs, ctx)
@@ -543,26 +673,39 @@ process_ast = function(ast, ctx)
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
     flatten_path(ast, steps, ctx)
-    return { type = "path", steps = steps, position = ast.position }
+    local path = { type = "path", steps = steps, position = ast.position }
+    resolve_ancestry(path, ctx)
+    return path
   end
-  if ast.type == "binary" or ast.type == "bind" then
+  if ast.type == "bind" then
     ast.lhs = process_ast(ast.lhs, ctx)
     ast.rhs = process_ast(ast.rhs, ctx)
+    push_ancestry(ast, ast.rhs)
+    return ast
+  end
+  if ast.type == "binary" then
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
+    push_ancestry(ast, ast.lhs)
+    push_ancestry(ast, ast.rhs)
     return ast
   end
   if ast.type == "unary" then
     ast.expression = process_ast(ast.expression, ctx)
+    push_ancestry(ast, ast.expression)
     return ast
   end
   if ast.type == "block" then
     for i, e in ipairs(ast.expressions) do
       ast.expressions[i] = process_ast(e, ctx)
+      push_ancestry(ast, ast.expressions[i])
     end
     return ast
   end
   if ast.type == "array" then
     for i, e in ipairs(ast.expressions) do
       ast.expressions[i] = process_ast(e, ctx)
+      push_ancestry(ast, ast.expressions[i])
     end
     return ast
   end
@@ -570,6 +713,8 @@ process_ast = function(ast, ctx)
     for _, pair in ipairs(ast.pairs) do
       pair[1] = process_ast(pair[1], ctx)
       pair[2] = process_ast(pair[2], ctx)
+      push_ancestry(ast, pair[1])
+      push_ancestry(ast, pair[2])
     end
     return ast
   end
@@ -577,12 +722,16 @@ process_ast = function(ast, ctx)
     ast.condition = process_ast(ast.condition, ctx)
     ast.then_expr = process_ast(ast.then_expr, ctx)
     ast.else_expr = process_ast(ast.else_expr, ctx)
+    push_ancestry(ast, ast.condition)
+    push_ancestry(ast, ast.then_expr)
+    push_ancestry(ast, ast.else_expr)
     return ast
   end
   if ast.type == "function" then
     ast.procedure = process_ast(ast.procedure, ctx)
     for i, a in ipairs(ast.arguments) do
       ast.arguments[i] = process_ast(a, ctx)
+      push_ancestry(ast, ast.arguments[i])
     end
     return ast
   end
@@ -598,6 +747,8 @@ process_ast = function(ast, ctx)
   if ast.type == "range" then
     ast.lhs = process_ast(ast.lhs, ctx)
     ast.rhs = process_ast(ast.rhs, ctx)
+    push_ancestry(ast, ast.lhs)
+    push_ancestry(ast, ast.rhs)
     return ast
   end
   if ast.type == "transform" then
@@ -615,7 +766,11 @@ end
 -- where ancestry/ancestorLabel live in the per-call parser closure).
 function M.process_ast(ast)
   local ctx = { ancestry = {}, ancestor_label = 0 }
-  return process_ast(ast, ctx)
+  local result = process_ast(ast, ctx)
+  if result ~= nil and (result.type == "parent" or result.seekingParent ~= nil) then
+    errors.raise("S0217", { token = result.type, position = result.position })
+  end
+  return result
 end
 
 -- Exposed for later tasks to register operators.
