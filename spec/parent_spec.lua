@@ -167,4 +167,17 @@ describe("parent %: predicates, sort, nested paths", function()
   it("navigates back mid-path: Price.% are the products", function()
     assert.are.same({ 1, 2, 3 }, run("Account.Order.Product.Price.%.ProductID", ORDERS))
   end)
+
+  it("supports chained predicates with parent strands (no aliasing blowup)", function()
+    local data = {
+      Name = "Firefly",
+      Account = {
+        Order = {
+          { OrderID = "order103", Product = { { ProductID = 1 } } },
+          { OrderID = "order104", Product = { { ProductID = 3 } } },
+        },
+      },
+    }
+    assert.are.equal(3, run("Account.Order.Product[%.OrderID='order104'][%.%.%.Name='Firefly'].ProductID", data))
+  end)
 end)

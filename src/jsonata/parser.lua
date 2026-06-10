@@ -549,7 +549,10 @@ local function push_ancestry(result, value)
     end
     if result.seekingParent == nil then
       result.seekingParent = slots
-    else
+    elseif result.seekingParent ~= slots then
+      -- identity guard: when the arrays are already aliased (a re-push of the
+      -- same pair, e.g. chained predicates on one step), the slots are already
+      -- present; appending would grow the table while iterating it.
       for _, s in ipairs(slots) do
         result.seekingParent[#result.seekingParent + 1] = s
       end
