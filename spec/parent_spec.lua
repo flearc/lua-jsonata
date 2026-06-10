@@ -46,6 +46,15 @@ describe("parent %: ancestry wiring (process_ast)", function()
     assert.is_false(ok)
     assert.are.equal("S0217", err.code)
   end)
+
+  it("resolves a %.% predicate strand through the enclosing path", function()
+    -- the %.% inside the predicate consumes one level in the filter context,
+    -- the remaining level must escape the nested wrap and anchor on step b
+    local ast = parser.parse("a.b.c[%.%.x = 1]")
+    local b = ast.steps[2]
+    assert.is_truthy(b.ancestor)
+    assert.is_truthy(b.tuple)
+  end)
 end)
 
 describe("parent %: parsing", function()

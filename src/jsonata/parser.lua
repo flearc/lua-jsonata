@@ -639,6 +639,11 @@ process_ast = function(ast, ctx)
     end
     step.predicate = step.predicate or {}
     step.predicate[#step.predicate + 1] = filter
+    -- Propagate pending ancestry (incl. a bare-parent step's own slot) onto
+    -- the path node: the enclosing path's resolve_ancestry pass reads
+    -- steps[i].seekingParent on this node, emulating jsonata's read of the
+    -- predicated step while it is briefly the laststep of a `.` level.
+    push_ancestry(path, step)
     return path
   end
   if ast.type == "sort" then
