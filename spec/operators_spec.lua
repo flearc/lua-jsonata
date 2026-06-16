@@ -84,3 +84,23 @@ describe("?: default (falsy-default)", function()
     assert.are.equal(42, run("miss ?: 42", {}))
   end)
 end)
+
+describe("?? / ?: right-greedy RHS (matches jsonata expression(0))", function()
+  -- The RHS must consume same-and-lower precedence operators, so e.g.
+  -- `"a" ?? "b" = "a"` parses as `"a" ?? ("b" = "a")`, NOT `("a" ?? "b") = "a"`.
+  it("?? RHS grabs a trailing comparison", function()
+    assert.are.equal("a", run('"a" ?? "b" = "a"'))
+  end)
+
+  it("?: RHS grabs a trailing comparison", function()
+    assert.are.equal("a", run('"a" ?: "b" = "a"'))
+  end)
+
+  it("?? RHS grabs a trailing boolean expression", function()
+    assert.are.equal("val", run('"val" ?? false or true'))
+  end)
+
+  it("?? RHS grabs a trailing ternary", function()
+    assert.are.equal(0, run('0 ?? "x" ? "b" : "c"'))
+  end)
+end)
