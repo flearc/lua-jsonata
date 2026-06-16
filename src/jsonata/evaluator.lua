@@ -690,9 +690,10 @@ local function _evaluate(node, input, env)
   elseif t == "condition" then
     if functions.truthy(evaluate(node.condition, input, env)) then
       return evaluate(node.then_expr, input, env)
-    else
+    elseif node.else_expr ~= nil then
       return evaluate(node.else_expr, input, env)
     end
+    return V.NOTHING
   elseif t == "variable" then
     return M.eval_variable(node, input, env)
   elseif t == "name" then

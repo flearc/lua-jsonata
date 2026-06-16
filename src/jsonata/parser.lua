@@ -314,11 +314,11 @@ do
   local s = symbol("?", 20)
   s.led = function(p, t, left)
     local then_expr = p.expression(0)
-    if p.node.id ~= ":" then
-      errors.raise("S0203", { position = p.node.position, token = ":" })
+    local else_expr = nil
+    if p.node.id == ":" then
+      p.advance()
+      else_expr = p.expression(0)
     end
-    p.advance()
-    local else_expr = p.expression(0)
     return {
       type = "condition",
       condition = left,
