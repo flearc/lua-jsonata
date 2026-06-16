@@ -24,6 +24,18 @@ local function eval_binary(node, input, env)
     return functions.truthy(evaluate(node.lhs, input, env)) and functions.truthy(evaluate(node.rhs, input, env))
   elseif op == "or" then
     return functions.truthy(evaluate(node.lhs, input, env)) or functions.truthy(evaluate(node.rhs, input, env))
+  elseif op == "??" then
+    local l = evaluate(node.lhs, input, env)
+    if V.is_nothing(l) then
+      return evaluate(node.rhs, input, env)
+    end
+    return l
+  elseif op == "?:" then
+    local l = evaluate(node.lhs, input, env)
+    if functions.truthy(l) then
+      return l
+    end
+    return evaluate(node.rhs, input, env)
   end
 
   local lhs = evaluate(node.lhs, input, env)
