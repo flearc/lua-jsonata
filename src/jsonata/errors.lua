@@ -8,6 +8,7 @@ local MESSAGES = {
   S0201 = "Syntax error",
   S0203 = "Expected token before end of expression",
   S0211 = "The symbol cannot be used as a unary operator",
+  S0217 = "The object representing the 'parent' cannot be derived from this expression",
   -- Type errors
   T0410 = "Argument of function does not match function signature",
   T0412 = "Argument of function must be an array of strings",

@@ -462,6 +462,15 @@ do
   end
 end
 
+-- Parent `%`: a prefix-only terminal in step position; `%` keeps its infix
+-- modulo led (same nud/led coexistence as `*` wildcard vs multiply).
+do
+  local s = symbol("%", 60)
+  s.nud = function(p, t)
+    return { type = "parent", position = t.position }
+  end
+end
+
 function M.parse_raw(source)
   local p = make_parser(source)
   p.advance()
@@ -476,52 +485,206 @@ function M.parse(source)
   return M.process_ast(M.parse_raw(source))
 end
 
-local function flatten_path(node, steps)
-  if node.type == "binary" and node.value == "." then
-    flatten_path(node.lhs, steps)
-    flatten_path(node.rhs, steps)
+local process_ast -- forward declaration (ctx-threaded internal)
+
+-- ===== `%` ancestry machinery (M3b), ported from jsonata-js v2.2.1 =====
+-- Slots are SHARED, MUTATED references — never copy a slot table.
+
+local seek_parent
+
+-- Walk one slot through one node, anchoring when level reaches 0.
+seek_parent = function(node, slot, ctx)
+  local t = node.type
+  if t == "name" or t == "wildcard" then
+    slot.level = slot.level - 1
+    if slot.level == 0 then
+      if node.ancestor == nil then
+        node.ancestor = slot
+      else
+        -- two % anchored on the same step share one label, so the evaluator
+        -- writes ONE tuple binding that both % references resolve through
+        ctx.ancestry[slot.index].slot.label = node.ancestor.label
+        node.ancestor = slot
+      end
+      node.tuple = true
+    end
+  elseif t == "parent" then
+    slot.level = slot.level + 1
+  elseif t == "block" then
+    -- resolve through the block's LAST expression only
+    if #node.expressions > 0 then
+      node.tuple = true
+      slot = seek_parent(node.expressions[#node.expressions], slot, ctx)
+    end
+  elseif t == "path" then
+    node.tuple = true
+    local index = #node.steps
+    slot = seek_parent(node.steps[index], slot, ctx)
+    index = index - 1
+    while slot.level > 0 and index >= 1 do
+      slot = seek_parent(node.steps[index], slot, ctx)
+      index = index - 1
+    end
   else
-    steps[#steps + 1] = M.process_ast(node)
+    errors.raise("S0217", { token = t, position = node.position })
+  end
+  return slot
+end
+
+-- Propagate unresolved slots from a child node up to its container.
+-- Invariant: a parent node's own seekingParent is nil when this is called
+-- (parent nodes are terminals); the in-place append to an adopted array is
+-- therefore safe and mirrors jsonata's aliasing.
+-- Field name kept camelCase (`seekingParent`) deliberately: it aliases the
+-- jsonata-js field 1:1 for port traceability; it is parser-internal transit
+-- state, never read by the evaluator.
+local function push_ancestry(result, value)
+  if value == nil then
+    return
+  end
+  if value.seekingParent ~= nil or value.type == "parent" then
+    local slots = value.seekingParent or {}
+    if value.type == "parent" then
+      slots[#slots + 1] = value.slot
+    end
+    if result.seekingParent == nil then
+      result.seekingParent = slots
+    elseif result.seekingParent ~= slots then
+      -- identity guard: when the arrays are already aliased (a re-push of the
+      -- same pair, e.g. chained predicates on one step), the slots are already
+      -- present; appending would grow the table while iterating it.
+      for _, s in ipairs(slots) do
+        result.seekingParent[#result.seekingParent + 1] = s
+      end
+    end
   end
 end
 
-function M.process_ast(ast)
+-- Resolve every step's pending slots against the steps before it. jsonata
+-- resolves incrementally at each `.` level (each step is briefly the last
+-- step of a sub-path); our flatten-then-wrap assembly emulates that with one
+-- positional pass. Step 1 is never a laststep in jsonata's left-assoc
+-- assembly, so its seekingParent is (faithfully) NOT read; a parent node AT
+-- step 1 is jsonata's lhs-seeding case (walks to index 0 -> path.seekingParent).
+-- KNOWN DIVERGENCE: our parser unwraps single-expression parens (M1 design),
+-- so shapes like `a.b.((1; %).c)` flatten into one path and the block step's
+-- strand resolves here; jsonata-js keeps the block boundary and orphans it
+-- (undefined). Exotic; we resolve MORE than jsonata, never less.
+local function resolve_ancestry(path, ctx)
+  local steps = path.steps
+  for i = 1, #steps do
+    local st = steps[i]
+    local slots = {}
+    if i >= 2 and st.seekingParent then
+      for _, s in ipairs(st.seekingParent) do
+        slots[#slots + 1] = s
+      end
+    end
+    if st.type == "parent" then
+      slots[#slots + 1] = st.slot
+    end
+    for _, slot in ipairs(slots) do
+      local idx = i - 1
+      while slot.level > 0 do
+        if idx < 1 then
+          if path.seekingParent == nil then
+            path.seekingParent = { slot }
+          else
+            path.seekingParent[#path.seekingParent + 1] = slot
+          end
+          break
+        end
+        local step = steps[idx]
+        idx = idx - 1
+        -- contiguous focus-bound steps count as one level (future @ support)
+        while idx >= 1 and step.focus and steps[idx].focus do
+          step = steps[idx]
+          idx = idx - 1
+        end
+        slot = seek_parent(step, slot, ctx)
+      end
+    end
+  end
+end
+
+local function flatten_path(node, steps, ctx)
+  if node.type == "binary" and node.value == "." then
+    flatten_path(node.lhs, steps, ctx)
+    flatten_path(node.rhs, steps, ctx)
+  else
+    steps[#steps + 1] = process_ast(node, ctx)
+  end
+end
+
+process_ast = function(ast, ctx)
   if ast == nil then
     return ast
   end
+  if ast.type == "parent" then
+    ast.slot = {
+      label = "!" .. ctx.ancestor_label,
+      level = 1,
+      index = #ctx.ancestry + 1,
+    }
+    ctx.ancestor_label = ctx.ancestor_label + 1
+    ctx.ancestry[#ctx.ancestry + 1] = ast
+    return ast
+  end
   if ast.type == "predicate" then
-    local target = M.process_ast(ast.expr)
+    local target = process_ast(ast.expr, ctx)
+    local filter = process_ast(ast.filter, ctx)
+    local step, path
     if target.type == "path" then
-      local last = target.steps[#target.steps]
-      last.predicate = last.predicate or {}
-      last.predicate[#last.predicate + 1] = M.process_ast(ast.filter)
-      return target
+      path = target
+      step = target.steps[#target.steps]
+    else
+      step = target
+      path = { type = "path", steps = { target }, position = ast.position }
     end
-    -- Wrap a non-path target as a single-step path carrying the predicate.
-    target.predicate = target.predicate or {}
-    target.predicate[#target.predicate + 1] = M.process_ast(ast.filter)
-    return { type = "path", steps = { target }, position = ast.position }
+    if filter.seekingParent ~= nil then
+      for _, slot in ipairs(filter.seekingParent) do
+        if slot.level == 1 then
+          seek_parent(step, slot, ctx)
+        else
+          slot.level = slot.level - 1
+        end
+      end
+      push_ancestry(step, filter)
+    end
+    step.predicate = step.predicate or {}
+    step.predicate[#step.predicate + 1] = filter
+    -- Propagate pending ancestry (incl. a bare-parent step's own slot) onto
+    -- the path node: the enclosing path's resolve_ancestry pass reads
+    -- steps[i].seekingParent on this node, emulating jsonata's read of the
+    -- predicated step while it is briefly the laststep of a `.` level.
+    push_ancestry(path, step)
+    return path
   end
   if ast.type == "sort" then
-    local target = M.process_ast(ast.lhs)
+    local target = process_ast(ast.lhs, ctx)
     local sort_step = { type = "sort", terms = {}, position = ast.position }
     for i, term in ipairs(ast.terms) do
-      sort_step.terms[i] = {
-        expression = M.process_ast(term.expression),
-        descending = term.descending,
-      }
+      local expression = process_ast(term.expression, ctx)
+      push_ancestry(sort_step, expression)
+      sort_step.terms[i] = { expression = expression, descending = term.descending }
     end
     if target.type == "path" then
       target.steps[#target.steps + 1] = sort_step
+      resolve_ancestry(target, ctx)
       return target
     end
-    return { type = "path", steps = { target, sort_step }, position = ast.position }
+    local path = { type = "path", steps = { target, sort_step }, position = ast.position }
+    resolve_ancestry(path, ctx)
+    return path
   end
   if ast.type == "group" then
-    local target = M.process_ast(ast.lhs)
+    -- NB: jsonata-js deliberately does NOT propagate % ancestry through {}
+    -- group-by pairs (its '{' case never calls pushAncestry); % slots inside
+    -- group pairs are faithfully orphaned -> runtime lookup miss -> undefined.
+    local target = process_ast(ast.lhs, ctx)
     local group_step = { type = "group", pairs = {}, position = ast.position }
     for i, pair in ipairs(ast.pairs) do
-      group_step.pairs[i] = { M.process_ast(pair[1]), M.process_ast(pair[2]) }
+      group_step.pairs[i] = { process_ast(pair[1], ctx), process_ast(pair[2], ctx) }
     end
     if target.type == "path" then
       target.steps[#target.steps + 1] = group_step
@@ -531,73 +694,110 @@ function M.process_ast(ast)
   end
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
-    flatten_path(ast, steps)
-    return { type = "path", steps = steps, position = ast.position }
+    flatten_path(ast, steps, ctx)
+    local path = { type = "path", steps = steps, position = ast.position }
+    resolve_ancestry(path, ctx)
+    return path
   end
-  if ast.type == "binary" or ast.type == "bind" then
-    ast.lhs = M.process_ast(ast.lhs)
-    ast.rhs = M.process_ast(ast.rhs)
+  if ast.type == "bind" then
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
+    push_ancestry(ast, ast.rhs)
+    return ast
+  end
+  if ast.type == "binary" then
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
+    push_ancestry(ast, ast.lhs)
+    push_ancestry(ast, ast.rhs)
     return ast
   end
   if ast.type == "unary" then
-    ast.expression = M.process_ast(ast.expression)
+    ast.expression = process_ast(ast.expression, ctx)
+    push_ancestry(ast, ast.expression)
     return ast
   end
   if ast.type == "block" then
     for i, e in ipairs(ast.expressions) do
-      ast.expressions[i] = M.process_ast(e)
+      ast.expressions[i] = process_ast(e, ctx)
+      push_ancestry(ast, ast.expressions[i])
     end
     return ast
   end
   if ast.type == "array" then
     for i, e in ipairs(ast.expressions) do
-      ast.expressions[i] = M.process_ast(e)
+      ast.expressions[i] = process_ast(e, ctx)
+      push_ancestry(ast, ast.expressions[i])
     end
     return ast
   end
   if ast.type == "object" then
     for _, pair in ipairs(ast.pairs) do
-      pair[1] = M.process_ast(pair[1])
-      pair[2] = M.process_ast(pair[2])
+      pair[1] = process_ast(pair[1], ctx)
+      pair[2] = process_ast(pair[2], ctx)
+      push_ancestry(ast, pair[1])
+      push_ancestry(ast, pair[2])
     end
     return ast
   end
   if ast.type == "condition" then
-    ast.condition = M.process_ast(ast.condition)
-    ast.then_expr = M.process_ast(ast.then_expr)
-    ast.else_expr = M.process_ast(ast.else_expr)
+    ast.condition = process_ast(ast.condition, ctx)
+    ast.then_expr = process_ast(ast.then_expr, ctx)
+    ast.else_expr = process_ast(ast.else_expr, ctx)
+    push_ancestry(ast, ast.condition)
+    push_ancestry(ast, ast.then_expr)
+    push_ancestry(ast, ast.else_expr)
     return ast
   end
   if ast.type == "function" then
-    ast.procedure = M.process_ast(ast.procedure)
+    ast.procedure = process_ast(ast.procedure, ctx)
     for i, a in ipairs(ast.arguments) do
-      ast.arguments[i] = M.process_ast(a)
+      ast.arguments[i] = process_ast(a, ctx)
+      push_ancestry(ast, ast.arguments[i])
     end
     return ast
   end
   if ast.type == "lambda" then
-    ast.body = M.process_ast(ast.body)
+    ast.body = process_ast(ast.body, ctx)
     return ast
   end
   if ast.type == "apply" then
-    ast.lhs = M.process_ast(ast.lhs)
-    ast.rhs = M.process_ast(ast.rhs)
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
+    -- NB: no push_ancestry here. jsonata-js does push through '~>' but no
+    -- observable divergence exists (verified against a jsonata-js oracle);
+    -- % inside an apply rhs is lambda-scope and orphans identically.
     return ast
   end
   if ast.type == "range" then
-    ast.lhs = M.process_ast(ast.lhs)
-    ast.rhs = M.process_ast(ast.rhs)
+    ast.lhs = process_ast(ast.lhs, ctx)
+    ast.rhs = process_ast(ast.rhs, ctx)
+    push_ancestry(ast, ast.lhs)
+    push_ancestry(ast, ast.rhs)
     return ast
   end
   if ast.type == "transform" then
-    ast.pattern = M.process_ast(ast.pattern)
-    ast.update = M.process_ast(ast.update)
+    -- NB: no push_ancestry (matches jsonata-js: transform never propagates
+    -- ancestry).
+    ast.pattern = process_ast(ast.pattern, ctx)
+    ast.update = process_ast(ast.update, ctx)
     if ast.delete then
-      ast.delete = M.process_ast(ast.delete)
+      ast.delete = process_ast(ast.delete, ctx)
     end
     return ast
   end
   return ast
+end
+
+-- Public entry: mints fresh per-parse ancestry state (mirrors jsonata-js,
+-- where ancestry/ancestorLabel live in the per-call parser closure).
+function M.process_ast(ast)
+  local ctx = { ancestry = {}, ancestor_label = 0 }
+  local result = process_ast(ast, ctx)
+  if result ~= nil and (result.type == "parent" or result.seekingParent ~= nil) then
+    errors.raise("S0217", { token = result.type, position = result.position })
+  end
+  return result
 end
 
 -- Exposed for later tasks to register operators.

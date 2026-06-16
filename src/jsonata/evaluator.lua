@@ -131,6 +131,34 @@ local function append_flat(seq, value)
   end
 end
 
+-- ===== Tuple-stream path evaluation (M3b `%` parent operator) =====
+-- A tuple is a plain table: ["@"] = context value, plus ancestor slot labels
+-- ("!0", ...) bound at ancestor-carrying steps (jsonata evaluateTupleStep).
+
+local function create_frame_from_tuple(env, tuple)
+  local frame = env:create_frame()
+  for k, v in pairs(tuple) do
+    frame:bind(k, v)
+  end
+  return frame
+end
+
+local function copy_tuple(t)
+  local nt = {}
+  for k, v in pairs(t) do
+    nt[k] = v
+  end
+  return nt
+end
+
+local function values_to_tuples(seq)
+  local tuples = {}
+  for i = 1, #seq do
+    tuples[#tuples + 1] = { ["@"] = seq[i] }
+  end
+  return tuples
+end
+
 -- Evaluate one path step against a single context item.
 local function eval_step_on_item(step, item, env)
   if step.type == "name" then
@@ -146,13 +174,18 @@ local function eval_step_on_item(step, item, env)
 end
 
 -- Apply predicates attached to a step to a sequence.
-local function apply_predicates(seq, predicates, env)
+local function apply_predicates(seq, predicates, env, tuple_mode)
   local current = seq
   for _, pred in ipairs(predicates) do
     local next_seq = V.sequence()
     for i = 1, #current do
       local item = current[i]
-      local pv = evaluate(pred, item, env)
+      local ctx_value, pred_env = item, env
+      if tuple_mode then
+        ctx_value = item["@"]
+        pred_env = create_frame_from_tuple(env, item)
+      end
+      local pv = evaluate(pred, ctx_value, pred_env)
       local pt = V.typeof(pv)
       if pt == "number" then
         local idx = math.floor(pv)
@@ -163,8 +196,17 @@ local function apply_predicates(seq, predicates, env)
           next_seq[#next_seq + 1] = item
         end
       elseif pt == "array" then
+        -- jsonata: an ALL-numeric array selects by index; any other array
+        -- falls through to truthiness (non-empty -> keep the item).
+        local all_numbers = true
         for j = 1, #pv do
-          if V.typeof(pv[j]) == "number" then
+          if V.typeof(pv[j]) ~= "number" then
+            all_numbers = false
+            break
+          end
+        end
+        if all_numbers then
+          for j = 1, #pv do
             local idx = math.floor(pv[j])
             if idx < 0 then
               idx = #current + idx
@@ -174,6 +216,8 @@ local function apply_predicates(seq, predicates, env)
               break
             end
           end
+        elseif functions.truthy(pv) then
+          next_seq[#next_seq + 1] = item
         end
       elseif functions.truthy(pv) then
         next_seq[#next_seq + 1] = item
@@ -189,7 +233,9 @@ end
 -- evaluateSortExpression: per term, evaluate the key in each element's context;
 -- undefined sorts last; non-number/string -> T2008; mismatched types -> T2007;
 -- descending negates; first non-equal term decides.
-local function eval_sort_step(context, terms, env)
+-- In tuple_mode, sort terms evaluate against tuple["@"] with a per-tuple frame
+-- (ancestor labels visible), mirroring jsonata's isTupleSort.
+local function eval_sort_step(context, terms, env, tuple_mode)
   local list = {}
   for j = 1, #context do
     list[j] = context[j]
@@ -197,8 +243,13 @@ local function eval_sort_step(context, terms, env)
   local comp_after = function(a, b)
     local comp = 0
     for _, term in ipairs(terms) do
-      local aa = evaluate(term.expression, a, env)
-      local bb = evaluate(term.expression, b, env)
+      local ca, ea, cb, eb = a, env, b, env
+      if tuple_mode then
+        ca, ea = a["@"], create_frame_from_tuple(env, a)
+        cb, eb = b["@"], create_frame_from_tuple(env, b)
+      end
+      local aa = evaluate(term.expression, ca, ea)
+      local bb = evaluate(term.expression, cb, eb)
       if V.is_nothing(aa) then
         comp = V.is_nothing(bb) and 0 or 1
       elseif V.is_nothing(bb) then
@@ -315,6 +366,23 @@ local function eval_group_step(context, pairs, env)
   return seq
 end
 
+-- A first step that produces a value from the WHOLE input (evaluated once)
+-- rather than navigating into it per-element. `parent` is env-bound like
+-- `variable`.
+local function step_is_self_contained(steps)
+  local s1 = steps[1]
+  return s1
+    and (
+      s1.type == "variable"
+      or s1.type == "function"
+      or s1.type == "path"
+      or s1.type == "wildcard"
+      or s1.type == "descendant"
+      or s1.type == "parent"
+      or (s1.type == "array" and not (steps[2] and steps[2].type == "variable"))
+    )
+end
+
 local function eval_path(node, input, env)
   -- Special case: when the first step produces a value from the WHOLE input
   -- rather than navigating into it per-element, evaluate it once and seed the
@@ -340,15 +408,7 @@ local function eval_path(node, input, env)
   -- (jsonata evaluates the first step against the input directly). Without this,
   -- array input would map the operator per-element, descending one level too far
   -- (e.g. `*.b` over `[{b:1},{b:2}]` must spread the elements, not their values).
-  local first_is_self_contained = steps[1]
-    and (
-      steps[1].type == "variable"
-      or steps[1].type == "function"
-      or steps[1].type == "path"
-      or steps[1].type == "wildcard"
-      or steps[1].type == "descendant"
-      or (steps[1].type == "array" and not (steps[2] and steps[2].type == "variable"))
-    )
+  local first_is_self_contained = step_is_self_contained(steps)
   if first_is_self_contained then
     local var_val = evaluate(steps[1], input, env)
     local result = V.sequence()
@@ -405,6 +465,119 @@ local function finalize_sequence(seq, keep_singleton)
   return seq
 end
 M.finalize_sequence = finalize_sequence
+
+-- Tuple-stream variant of eval_path: used when any step carries .tuple (an
+-- ancestor anchor wired by the parser). Tuples flow per item; a step with
+-- .ancestor binds its INPUT item under the slot label on every output tuple;
+-- sub-evaluations run with a per-tuple frame so `%` resolves via env lookup.
+local function eval_path_tuple(node, input, env)
+  local steps = node.steps
+  local tuples
+  local start = 1
+  if step_is_self_contained(steps) then
+    local var_val = evaluate(steps[1], input, env)
+    if V.is_sequence(var_val) and V.get_flag(var_val, "tuple_stream") then
+      tuples = {}
+      for i = 1, #var_val do
+        tuples[#tuples + 1] = var_val[i]
+      end
+    elseif steps[1].type == "array" and V.is_array(var_val) then
+      tuples = values_to_tuples(var_val)
+    else
+      local seeded = V.sequence()
+      append_flat(seeded, var_val)
+      tuples = values_to_tuples(seeded)
+    end
+    if steps[1].ancestor then
+      -- the self-contained step ran against the whole path input: that input
+      -- is the ancestor every seeded tuple binds (jsonata binds the step's
+      -- input item per tuple; for step 1 that is the path input itself)
+      for j = 1, #tuples do
+        tuples[j][steps[1].ancestor.label] = input
+      end
+    end
+    if steps[1].predicate then
+      tuples = apply_predicates(tuples, steps[1].predicate, env, true)
+    end
+    start = 2
+  elseif V.is_array(input) then
+    tuples = values_to_tuples(input)
+  else
+    tuples = { { ["@"] = input } }
+  end
+
+  for i = start, #steps do
+    local step = steps[i]
+    if step.type == "sort" then
+      tuples = eval_sort_step(tuples, step.terms, env, true)
+    elseif step.type == "group" then
+      -- Ancestry does not flow into group pairs (matches jsonata's parser,
+      -- which never pushes ancestry through `{` group-by); consume values.
+      -- NB: the `{k:v}` OBJECT constructor is type "object" (not "group") and
+      -- reaches the else branch below, where the per-tuple frame keeps
+      -- ancestry live.
+      local values = V.sequence()
+      for j = 1, #tuples do
+        values[#values + 1] = tuples[j]["@"]
+      end
+      tuples = values_to_tuples(eval_group_step(values, step.pairs, env))
+    else
+      local next_tuples = {}
+      for j = 1, #tuples do
+        local t = tuples[j]
+        local item = t["@"]
+        if not V.is_nothing(item) then
+          local frame = create_frame_from_tuple(env, t)
+          local res = eval_step_on_item(step, item, frame)
+          if not V.is_nothing(res) then
+            if V.is_sequence(res) and V.get_flag(res, "tuple_stream") then
+              -- nested tuple-returning path: merge its bindings wholesale
+              for b = 1, #res do
+                local nt = copy_tuple(t)
+                for k, v in pairs(res[b]) do
+                  nt[k] = v
+                end
+                next_tuples[#next_tuples + 1] = nt
+              end
+            else
+              -- one tuple per result element; no cons exception in tuple mode
+              local list = res
+              if not V.is_array(res) then
+                list = { res }
+              end
+              for b = 1, #list do
+                local nt = copy_tuple(t)
+                nt["@"] = list[b]
+                if step.ancestor then
+                  nt[step.ancestor.label] = item
+                end
+                next_tuples[#next_tuples + 1] = nt
+              end
+            end
+          end
+        end
+      end
+      tuples = next_tuples
+    end
+    if step.predicate then
+      tuples = apply_predicates(tuples, step.predicate, env, true)
+    end
+  end
+
+  if node.tuple then
+    local seq = V.sequence()
+    for j = 1, #tuples do
+      seq[j] = tuples[j]
+    end
+    V.set_flag(seq, "tuple_stream", true)
+    return seq
+  end
+  local seq = V.sequence()
+  for j = 1, #tuples do
+    seq[#seq + 1] = tuples[j]["@"]
+  end
+  return seq
+end
 
 -- Recursively flatten nested arrays into `out` (jsonata's flatten()).
 local function flatten_into(value, out)
@@ -522,8 +695,21 @@ local function _evaluate(node, input, env)
     end
     return V.obj_get(input, node.value)
   elseif t == "path" then
-    local seq = eval_path(node, input, env)
-    return finalize_sequence(seq, false)
+    local tuple_mode = false
+    for _, s in ipairs(node.steps) do
+      if s.tuple then
+        tuple_mode = true
+        break
+      end
+    end
+    if tuple_mode then
+      local seq = eval_path_tuple(node, input, env)
+      if node.tuple then
+        return seq -- tuple stream for an enclosing tuple step; no unwrap
+      end
+      return finalize_sequence(seq, false)
+    end
+    return finalize_sequence(eval_path(node, input, env), false)
   elseif t == "array" then
     local arr = V.array({})
     for _, e in ipairs(node.expressions) do
@@ -641,6 +827,12 @@ local function _evaluate(node, input, env)
     return eval_wildcard(input)
   elseif t == "descendant" then
     return eval_descendant(input)
+  elseif t == "parent" then
+    local v = env:lookup(node.slot.label)
+    if v == nil then
+      return V.NOTHING
+    end
+    return v
   end
   errors.raise("D3001", { token = t })
 end
