@@ -69,6 +69,19 @@ local function eval_binary(node, input, env)
     end
   end
 
+  if op == "in" then
+    if V.is_nothing(lhs) or V.is_nothing(rhs) then
+      return false
+    end
+    local arr = V.is_array(rhs) and rhs or { rhs }
+    for i = 1, #arr do
+      if arr[i] == lhs then
+        return true
+      end
+    end
+    return false
+  end
+
   errors.raise("S0201", { token = op })
 end
 

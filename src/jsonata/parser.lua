@@ -159,6 +159,7 @@ infix("<", 40)
 infix("<=", 40)
 infix(">", 40)
 infix(">=", 40)
+infix("in", 40)
 -- Boolean
 infix("and", 30)
 infix("or", 25)
