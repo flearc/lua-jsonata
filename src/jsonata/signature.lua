@@ -133,7 +133,101 @@ function M.parse(signature)
   end
   local pattern = "^" .. table.concat(pieces) .. "$"
 
-  return { params = params, pattern = pattern, _mapping = ARRAY_SIG_MAPPING }
+  local function throw_validation(args, supplied)
+    local partial = "^"
+    local good_to = 0
+    for i = 1, #params do
+      partial = partial .. params[i].regex
+      local m = supplied:match(partial)
+      if m == nil then
+        errors.raise("T0410", { value = args[good_to + 1], index = good_to + 1 })
+      end
+      good_to = #m
+    end
+    errors.raise("T0410", { value = args[good_to + 1], index = good_to + 1 })
+  end
+
+  local validator = { params = params, pattern = pattern }
+
+  function validator.validate(args, context)
+    local supplied = {}
+    for i = 1, #args do
+      supplied[i] = get_symbol(args[i])
+    end
+    supplied = table.concat(supplied)
+
+    if supplied:match(pattern) == nil then
+      throw_validation(args, supplied)
+    end
+    local caps = { supplied:match(pattern) }
+
+    local validated = {}
+    local function push(value)
+      validated[#validated + 1] = (value == nil) and V.NOTHING or value
+    end
+
+    local arg_index = 1
+    for index = 1, #params do
+      local p = params[index]
+      local match = caps[index]
+      if match == "" then
+        if p.context and p.context_regex then
+          if get_symbol(context):match(p.context_regex) then
+            push(context) -- inject context; do NOT advance arg_index
+          else
+            errors.raise("T0411", { value = context, index = arg_index })
+          end
+        else
+          push(args[arg_index])
+          arg_index = arg_index + 1
+        end
+      else
+        for single in match:gmatch(".") do
+          local arg = args[arg_index]
+          if p.type == "a" then
+            if single == "m" then
+              arg = nil
+            else
+              local array_ok = true
+              if p.subtype ~= nil then
+                if single ~= "a" and match ~= p.subtype then
+                  array_ok = false
+                elseif single == "a" then
+                  if #arg > 0 then
+                    local item_type = get_symbol(arg[1])
+                    if item_type ~= p.subtype:sub(1, 1) then
+                      array_ok = false
+                    else
+                      for k = 1, #arg do
+                        if get_symbol(arg[k]) ~= item_type then
+                          array_ok = false
+                          break
+                        end
+                      end
+                    end
+                  end
+                end
+              end
+              if not array_ok then
+                errors.raise("T0412", { value = arg, index = arg_index, type = ARRAY_SIG_MAPPING[p.subtype] })
+              end
+              if single ~= "a" then
+                arg = V.array({ arg })
+              end
+            end
+            push(arg)
+            arg_index = arg_index + 1
+          else
+            push(args[arg_index])
+            arg_index = arg_index + 1
+          end
+        end
+      end
+    end
+    return validated
+  end
+
+  return validator
 end
 
 return M

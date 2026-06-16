@@ -53,6 +53,8 @@ function M.raise(code, info)
   info = info or {}
   local err = setmetatable({
     code = code,
+    index = info.index,
+    type = info.type,
     position = info.position,
     token = info.token,
     value = info.value,
