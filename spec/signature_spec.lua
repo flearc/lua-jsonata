@@ -1,0 +1,38 @@
+local sig = require("jsonata.signature")
+
+describe("signature: parse", function()
+  it("compiles type chars into a capture-group pattern", function()
+    assert.are.equal("^([nm])([nm])$", sig.parse("<nn:n>").pattern)
+    assert.are.equal("^([sm])$", sig.parse("<s:s>").pattern)
+  end)
+
+  it("compiles modifiers", function()
+    assert.are.equal("^([sm]?)$", sig.parse("<s-:s>").pattern)
+    assert.are.equal("^([nm]?)$", sig.parse("<n?:n>").pattern)
+    assert.are.equal("^([sm]+)$", sig.parse("<s+:s>").pattern)
+  end)
+
+  it("compiles array, union, subtype", function()
+    assert.are.equal("^([asnblfom])$", sig.parse("<a:a>").pattern)
+    assert.are.equal("^([asnblfom])([sm]?)$", sig.parse("<a<s>s?:s>").pattern)
+    assert.are.equal("^([snm])$", sig.parse("<(sn):n>").pattern)
+  end)
+
+  it("raises S0401 for a subtype on a non-array/function", function()
+    local ok, err = pcall(sig.parse, "<n<n>>")
+    assert.is_false(ok)
+    assert.are.equal("S0401", err.code)
+  end)
+
+  it("raises S0402 for a parameterized type inside a union", function()
+    local ok, err = pcall(sig.parse, "<(s<n>):n>")
+    assert.is_false(ok)
+    assert.are.equal("S0402", err.code)
+  end)
+
+  it("maps values to type symbols", function()
+    assert.are.equal("s", sig.get_symbol("hi"))
+    assert.are.equal("n", sig.get_symbol(5))
+    assert.are.equal("b", sig.get_symbol(true))
+  end)
+end)
