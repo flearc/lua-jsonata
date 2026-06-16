@@ -15,7 +15,7 @@ local KEYWORDS = {
 }
 
 -- Multi-character operators, longest first.
-local MULTI_OPS = { ":=", "!=", "<=", ">=", "~>", ">>", "**", ".." }
+local MULTI_OPS = { ":=", "!=", "<=", ">=", "~>", ">>", "**", "..", "??", "?:" }
 local SINGLE_OPS = "%.%[%]{}%(%)%+%-%*/%%=<>&|%^?:;,@#~"
 
 local ESCAPES = {

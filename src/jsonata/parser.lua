@@ -159,6 +159,22 @@ infix("<", 40)
 infix("<=", 40)
 infix(">", 40)
 infix(">=", 40)
+infix("in", 40)
+-- ?? and ?: use expression(0) for their RHS, exactly as jsonata-js does.
+-- This makes them right-greedy over all same-and-lower precedence operators
+-- (=, !=, <, <=, >, >=, in, and, or, ?, ~>).  Without this, `"a"??b=c` would
+-- parse as `("a"??b)=c` (left-assoc), but jsonata parses it as `"a"??(b=c)`.
+do
+  local function make_greedy_binary(id)
+    local s = symbol(id, 40)
+    s.led = function(p, t, left)
+      return { type = "binary", value = id, lhs = left, rhs = p.expression(0), position = t.position }
+    end
+    return s
+  end
+  make_greedy_binary("??")
+  make_greedy_binary("?:")
+end
 -- Boolean
 infix("and", 30)
 infix("or", 25)
@@ -313,11 +329,11 @@ do
   local s = symbol("?", 20)
   s.led = function(p, t, left)
     local then_expr = p.expression(0)
-    if p.node.id ~= ":" then
-      errors.raise("S0203", { position = p.node.position, token = ":" })
+    local else_expr = nil
+    if p.node.id == ":" then
+      p.advance()
+      else_expr = p.expression(0)
     end
-    p.advance()
-    local else_expr = p.expression(0)
     return {
       type = "condition",
       condition = left,

@@ -24,6 +24,18 @@ local function eval_binary(node, input, env)
     return functions.truthy(evaluate(node.lhs, input, env)) and functions.truthy(evaluate(node.rhs, input, env))
   elseif op == "or" then
     return functions.truthy(evaluate(node.lhs, input, env)) or functions.truthy(evaluate(node.rhs, input, env))
+  elseif op == "??" then
+    local l = evaluate(node.lhs, input, env)
+    if V.is_nothing(l) then
+      return evaluate(node.rhs, input, env)
+    end
+    return l
+  elseif op == "?:" then
+    local l = evaluate(node.lhs, input, env)
+    if functions.truthy(l) then
+      return l
+    end
+    return evaluate(node.rhs, input, env)
   end
 
   local lhs = evaluate(node.lhs, input, env)
@@ -67,6 +79,19 @@ local function eval_binary(node, input, env)
     else
       return lhs >= rhs
     end
+  end
+
+  if op == "in" then
+    if V.is_nothing(lhs) or V.is_nothing(rhs) then
+      return false
+    end
+    local arr = V.is_array(rhs) and rhs or { rhs }
+    for i = 1, #arr do
+      if arr[i] == lhs then
+        return true
+      end
+    end
+    return false
   end
 
   errors.raise("S0201", { token = op })
@@ -677,9 +702,10 @@ local function _evaluate(node, input, env)
   elseif t == "condition" then
     if functions.truthy(evaluate(node.condition, input, env)) then
       return evaluate(node.then_expr, input, env)
-    else
+    elseif node.else_expr ~= nil then
       return evaluate(node.else_expr, input, env)
     end
+    return V.NOTHING
   elseif t == "variable" then
     return M.eval_variable(node, input, env)
   elseif t == "name" then
