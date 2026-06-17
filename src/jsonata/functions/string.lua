@@ -209,25 +209,15 @@ R.join = H.def(function(arr, sep)
   if nothing_guard(arr) then
     return V.NOTHING
   end
-  if not V.is_array(arr) then
-    H.err("T0412", { name = "join", position = 1, value = arr })
+  if V.is_nothing(sep) then
+    sep = ""
   end
-  -- All elements must be strings
-  for i = 1, #arr do
-    if V.typeof(arr[i]) ~= "string" then
-      H.err("T0412", { name = "join", position = 1, value = arr })
-    end
-  end
-  if sep ~= nil and V.typeof(sep) ~= "string" then
-    H.err("T0410", { name = "join", position = 2, value = sep })
-  end
-  sep = sep or ""
   local parts = {}
   for i = 1, #arr do
     parts[i] = arr[i]
   end
   return table.concat(parts, sep)
-end, 1, 2)
+end, 1, 2, "<a<s>s?:s>")
 
 -- Percent-encode every byte not in `unreserved`.
 local function percent_encode(s, unreserved)

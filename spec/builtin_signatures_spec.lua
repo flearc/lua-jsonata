@@ -129,3 +129,47 @@ describe("builtin signatures: '-' numeric + object/boolean", function()
     assert.is_true(run("$not(false)"))
   end)
 end)
+
+describe("builtin signatures: non-'-' subtypes", function()
+  local function code(src)
+    local ok, err = pcall(run, src)
+    assert.is_false(ok)
+    return err.code
+  end
+
+  it("aggregates raise T0412 on a non-number element", function()
+    assert.are.equal("T0412", code('$sum([1, "x"])'))
+    assert.are.equal("T0412", code('$max([1, "x"])'))
+  end)
+
+  it("aggregates still compute (incl. scalar coercion)", function()
+    assert.are.equal(6, run("$sum([1,2,3])"))
+    assert.are.equal(5, run("$sum(5)"))
+    assert.are.equal(3, run("$max([1,2,3])"))
+  end)
+
+  it("$join requires an array of strings (T0412)", function()
+    assert.are.equal("T0412", code("$join([1,2])"))
+  end)
+
+  it("$join treats an undefined separator as empty (case011/012)", function()
+    assert.are.equal("ab", run('$join(["a","b"])'))
+    assert.are.equal("ab", run('λ($a,$sep)<a<s>s?:s>{$join($a,$sep)}(["a","b"])'))
+  end)
+
+  it("$merge requires an array of objects", function()
+    local r = run('$merge([{"a":1},{"b":2}])')
+    assert.are.equal(1, r.a)
+    assert.are.equal(2, r.b)
+    assert.are.equal("T0412", code("$merge([1,2])"))
+  end)
+
+  it("$assert rejects a non-boolean condition with T0410", function()
+    assert.are.equal("T0410", code('$assert(5, "msg")'))
+  end)
+
+  it("$exists works with its signature", function()
+    assert.is_true(run("$exists(foo)", { foo = 1 }))
+    assert.is_false(run("$exists(foo)", {}))
+  end)
+end)

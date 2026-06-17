@@ -16,6 +16,6 @@ end, 1, 1, "<x-:b>")
 
 R.exists = H.def(function(x)
   return not V.is_nothing(x)
-end, 1)
+end, 1, 1, "<x:b>")
 
 return R

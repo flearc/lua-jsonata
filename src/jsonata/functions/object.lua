@@ -99,7 +99,7 @@ R.merge = H.def(function(x)
     end
   end
   return merged
-end, 1)
+end, 1, 1, "<a<o>:o>")
 
 R.type = H.def(function(x)
   if V.is_nothing(x) then
@@ -116,13 +116,10 @@ R.error = H.def(function(msg)
 end, 0, 1)
 
 R.assert = H.def(function(cond, msg)
-  if cond == nil or V.is_nothing(cond) or V.typeof(cond) ~= "boolean" then
-    H.err("T0410", { name = "assert", position = 1, value = cond })
-  end
-  if not cond then
+  if V.is_nothing(cond) or not cond then
     H.err("D3141", { message = V.is_nothing(msg) and "$assert() statement failed" or msg })
   end
   return V.NOTHING
-end, 1, 2)
+end, 1, 2, "<bs?:x>")
 
 return R
