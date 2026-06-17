@@ -9,9 +9,9 @@ local R = {}
 -- evaluator -> functions -> higher_order -> evaluator. By the time any HOF
 -- runs, evaluator.apply is defined; require is memoized so this is cheap.
 local eval
-local function apply(proc, args)
+local function apply(proc, args, context)
   eval = eval or require("jsonata.evaluator")
-  return eval.apply(proc, args)
+  return eval.apply(proc, args, context)
 end
 
 -- Arity a callback declares: lambda -> #params; builtin -> stored arity (= min).

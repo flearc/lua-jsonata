@@ -896,6 +896,9 @@ function M.apply(proc, args, context)
     return M.apply_lambda(proc, args, context)
   end
   if type(proc) == "table" and proc._jsonata_function then
+    if proc.signature then
+      args = proc.signature.validate(args, context)
+    end
     return proc.impl((table.unpack or unpack)(args, 1, #args))
   end
   errors.raise("T1006", { value = proc })
