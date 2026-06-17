@@ -150,6 +150,12 @@ function Tokenizer:next()
     return { type = "variable", value = name, position = start }
   end
 
+  -- λ (U+03BB, UTF-8 0xCE 0xBB) is an alias for the `function` keyword.
+  if self.src:sub(self.pos, self.pos + 1) == "\206\187" then
+    self.pos = self.pos + 2
+    return { type = "keyword", value = "function", position = start }
+  end
+
   -- names / keywords
   if c:match("[%a_]") then
     local name = self.src:match("^[%a_][%w_]*", self.pos)
