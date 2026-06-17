@@ -185,6 +185,12 @@ prefix("-", 70)
 -- Assignment (right-associative) -> "bind" node
 infixr(":=", 10, "bind")
 
+-- ">>" appears in MULTI_OPS (tokenizer) and is also produced when parsing
+-- lambda signatures like <a<n>>, where two consecutive '>' chars are lexed as
+-- one ">>" token.  Register it as a zero-binding-power terminal so tok_to_node
+-- does not raise S0201 when the signature-scanning loop calls p.advance().
+symbol(">>")
+
 -- Path operator: build a temporary binary "." node; processAST flattens it.
 infix(".", 75)
 
@@ -376,6 +382,26 @@ do
       errors.raise("S0203", { position = p.node.position, token = ")" })
     end
     p.advance() -- consume ')'
+    local signature = nil
+    if p.node.id == "<" then
+      local depth, parts = 0, {}
+      while true do
+        local val = tostring(p.node.value)
+        parts[#parts + 1] = val
+        for ch in val:gmatch(".") do
+          if ch == "<" then
+            depth = depth + 1
+          elseif ch == ">" then
+            depth = depth - 1
+          end
+        end
+        p.advance()
+        if depth <= 0 or p.node.id == "{" or p.node.id == "(end)" then
+          break
+        end
+      end
+      signature = require("jsonata.signature").parse(table.concat(parts))
+    end
     if p.node.id ~= "{" then
       errors.raise("S0203", { position = p.node.position, token = "{" })
     end
@@ -385,7 +411,7 @@ do
       errors.raise("S0203", { position = p.node.position, token = "}" })
     end
     p.advance() -- consume '}'
-    return { type = "lambda", params = params, body = body, position = t.position }
+    return { type = "lambda", params = params, body = body, signature = signature, position = t.position }
   end
 end
 

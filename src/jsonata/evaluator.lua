@@ -761,7 +761,14 @@ local function _evaluate(node, input, env)
   elseif t == "function" then
     return M.eval_function(node, input, env)
   elseif t == "lambda" then
-    return { _jsonata_lambda = true, params = node.params, body = node.body, env = env, input = input }
+    return {
+      _jsonata_lambda = true,
+      params = node.params,
+      body = node.body,
+      env = env,
+      input = input,
+      signature = node.signature,
+    }
   elseif t == "apply" then
     local lhs = evaluate(node.lhs, input, env)
     local rhs = node.rhs
@@ -922,6 +929,9 @@ function M.eval_function(node, input, env)
   -- minimal stand-in for jsonata's '-' context signature marker.
   if type(proc) == "table" and proc.inject_context and #args == 1 then
     table.insert(args, 1, input)
+  end
+  if type(proc) == "table" and proc._jsonata_lambda and proc.signature then
+    args = proc.signature.validate(args, input)
   end
   local result = M.apply(proc, args)
   if V.is_sequence(result) then
