@@ -778,9 +778,9 @@ local function _evaluate(node, input, env)
       for _, a in ipairs(rhs.arguments) do
         args[#args + 1] = evaluate(a, input, env)
       end
-      return M.apply(proc, args)
+      return M.apply(proc, args, input)
     end
-    return M.apply(evaluate(rhs, input, env), { lhs })
+    return M.apply(evaluate(rhs, input, env), { lhs }, input)
   elseif t == "transform" then
     return {
       _jsonata_function = true,
@@ -891,9 +891,9 @@ evaluate = function(node, input, env)
 end
 
 -- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
-function M.apply(proc, args)
+function M.apply(proc, args, context)
   if type(proc) == "table" and proc._jsonata_lambda then
-    return M.apply_lambda(proc, args)
+    return M.apply_lambda(proc, args, context)
   end
   if type(proc) == "table" and proc._jsonata_function then
     return proc.impl((table.unpack or unpack)(args, 1, #args))
@@ -901,7 +901,10 @@ function M.apply(proc, args)
   errors.raise("T1006", { value = proc })
 end
 
-function M.apply_lambda(proc, args)
+function M.apply_lambda(proc, args, context)
+  if proc.signature then
+    args = proc.signature.validate(args, context)
+  end
   local frame = proc.env:create_frame()
   for i, name in ipairs(proc.params) do
     local v = args[i]
@@ -930,10 +933,7 @@ function M.eval_function(node, input, env)
   if type(proc) == "table" and proc.inject_context and #args == 1 then
     table.insert(args, 1, input)
   end
-  if type(proc) == "table" and proc._jsonata_lambda and proc.signature then
-    args = proc.signature.validate(args, input)
-  end
-  local result = M.apply(proc, args)
+  local result = M.apply(proc, args, input)
   if V.is_sequence(result) then
     return finalize_sequence(result, false)
   end

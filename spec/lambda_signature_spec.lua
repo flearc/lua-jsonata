@@ -43,3 +43,49 @@ describe("lambda: typed signatures", function()
     assert.are.equal(25, run("function($x){$x * $x}(5)"))
   end)
 end)
+
+describe("lambda: signatures enforced on all apply paths", function()
+  -- Finding 1: HOF callbacks validate (matches jsonata-js v2.2.1)
+  it("validates a signed $map callback", function()
+    local ok, err = pcall(run, "$map([1,2,3], λ($v)<s:s>{$v})")
+    assert.is_false(ok)
+    assert.are.equal("T0410", err.code)
+  end)
+
+  it("a matching signed $map callback still works", function()
+    assert.are.same({ 2, 4, 6 }, run("$map([1,2,3], λ($v)<n:n>{$v * 2})"))
+  end)
+
+  it("an unsigned $map callback is untouched", function()
+    assert.are.same({ 2, 4, 6 }, run("$map([1,2,3], λ($v){$v * 2})"))
+  end)
+
+  it("a matching signed $filter callback still works", function()
+    assert.are.same({ 2, 3 }, run("$filter([1,2,3], λ($v)<n:b>{$v > 1})"))
+  end)
+
+  -- Finding 2: ~> apply validates
+  it("validates a signed lambda applied via ~>", function()
+    local ok, err = pcall(run, "5 ~> λ($a)<s:s>{$a}")
+    assert.is_false(ok)
+    assert.are.equal("T0410", err.code)
+  end)
+
+  it("a matching signed lambda via ~> still works", function()
+    assert.are.equal("HI", run('"hi" ~> λ($a)<s:s>{$uppercase($a)}'))
+  end)
+
+  it("validates a signed lambda stored in a var then applied via ~>", function()
+    local ok, err = pcall(run, "($f := λ($a)<s:s>{$a}; 5 ~> $f)")
+    assert.is_false(ok)
+    assert.are.equal("T0410", err.code)
+  end)
+
+  it("a builtin applied via ~> is unaffected", function()
+    assert.are.equal("5", run("5 ~> $string"))
+  end)
+
+  it("a positive signed lambda via ~>", function()
+    assert.are.equal(6, run("5 ~> λ($x)<n:n>{$x + 1}"))
+  end)
+end)
