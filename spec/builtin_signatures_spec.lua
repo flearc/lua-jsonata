@@ -173,3 +173,20 @@ describe("builtin signatures: non-'-' subtypes", function()
     assert.is_false(run("$exists(foo)", {}))
   end)
 end)
+
+describe("error messages: {{x}} interpolation", function()
+  it("interpolates index/token into a T0410 message", function()
+    local ok, err = pcall(run, "$abs([1,2])")
+    assert.is_false(ok)
+    assert.are.equal("T0410", err.code)
+    assert.is_nil(err.message:find("{{", 1, true)) -- no literal braces remain
+    assert.is_not_nil(err.message:find("1", 1, true)) -- the index is rendered
+  end)
+
+  it("leaves brace-free messages unchanged", function()
+    local ok, err = pcall(run, "$assert(false)")
+    assert.is_false(ok)
+    assert.are.equal("D3141", err.code)
+    assert.are.equal("$assert() statement failed", err.message)
+  end)
+end)
