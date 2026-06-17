@@ -26,7 +26,7 @@ R.keys = H.def(function(x)
     end
   end
   return out
-end, 1)
+end, 1, 1, "<x-:a<s>>")
 
 R.lookup = H.def(function(x, key)
   if V.is_nothing(x) then
@@ -53,7 +53,7 @@ R.lookup = H.def(function(x, key)
     return V.obj_get(x, key)
   end
   return V.NOTHING
-end, 2)
+end, 2, 2, "<x-s:x>")
 
 R.spread = H.def(function(x)
   if V.is_nothing(x) then
@@ -77,7 +77,7 @@ R.spread = H.def(function(x)
     end
   end
   return out
-end, 1)
+end, 1, 1, "<x-:a<o>>")
 
 R.merge = H.def(function(x)
   if V.is_nothing(x) then

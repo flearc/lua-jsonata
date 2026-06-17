@@ -90,3 +90,42 @@ describe("builtin signatures: '-' string/URL", function()
     assert.are.equal("a%20b", run('$encodeUrl("a b")'))
   end)
 end)
+
+describe("builtin signatures: '-' numeric + object/boolean", function()
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+
+  it("numeric builtins reject non-numbers with T0410", function()
+    assert.are.equal("T0410", code('$abs("x")'))
+    assert.are.equal("T0410", code('$floor("x")'))
+    assert.are.equal("T0410", code('$power("x", 2)'))
+    assert.are.equal("T0410", code("$number([1,2])"))
+  end)
+
+  it("numeric builtins inject context + propagate undefined", function()
+    assert.are.equal(5, run("$abs()", -5))
+    assert.is_nil(run("nope.$abs()", {}))
+  end)
+
+  it("$number coerces a string/boolean and the context", function()
+    assert.are.equal(42, run('$number("42")'))
+    assert.are.equal(1, run("$number(true)"))
+    assert.are.equal(7, run("$number()", "7"))
+  end)
+
+  it("$lookup requires a string key (T0410)", function()
+    assert.are.equal("T0410", code("$lookup({}, 5)"))
+  end)
+
+  it("$keys injects the context object", function()
+    assert.are.same({ "a", "b" }, run("$sort($keys())", { a = 1, b = 2 }))
+  end)
+
+  it("$not returns undefined on undefined (not true)", function()
+    assert.is_nil(run("$not(nope)", {}))
+    assert.is_true(run("$not(false)"))
+  end)
+end)

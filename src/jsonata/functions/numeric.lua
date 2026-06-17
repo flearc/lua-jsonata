@@ -36,35 +36,35 @@ R.number = H.def(function(x)
     return x and 1 or 0
   end
   return V.NOTHING
-end, 1)
+end, 1, 1, "<(nsb)-:n>")
 
 R.abs = H.def(function(x)
   if num_guard(x) then
     return V.NOTHING
   end
   return math.abs(x)
-end, 1)
+end, 1, 1, "<n-:n>")
 
 R.floor = H.def(function(x)
   if num_guard(x) then
     return V.NOTHING
   end
   return math.floor(x)
-end, 1)
+end, 1, 1, "<n-:n>")
 
 R.ceil = H.def(function(x)
   if num_guard(x) then
     return V.NOTHING
   end
   return math.ceil(x)
-end, 1)
+end, 1, 1, "<n-:n>")
 
 -- Round half to even (banker's rounding), with optional decimal precision.
 R.round = H.def(function(x, precision)
   if num_guard(x) then
     return V.NOTHING
   end
-  precision = precision == nil and 0 or math.floor(precision)
+  precision = (precision == nil or V.is_nothing(precision)) and 0 or math.floor(precision)
   local factor = 10 ^ precision
   local scaled = x * factor
   -- correct binary-float representation error before the half-even test
@@ -80,14 +80,14 @@ R.round = H.def(function(x, precision)
     rounded = (floored % 2 == 0) and floored or floored + 1
   end
   return rounded / factor
-end, 1, 2)
+end, 1, 2, "<n-n?:n>")
 
 R.power = H.def(function(base, exp)
   if num_guard(base) or num_guard(exp) then
     return V.NOTHING
   end
   return base ^ exp
-end, 2)
+end, 2, 2, "<n-n:n>")
 
 R.sqrt = H.def(function(x)
   if num_guard(x) then
@@ -97,14 +97,14 @@ R.sqrt = H.def(function(x)
     H.err("D3060", { value = x, message = "$sqrt of a negative number" })
   end
   return math.sqrt(x)
-end, 1)
+end, 1, 1, "<n-:n>")
 
 local DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
 R.formatBase = H.def(function(x, radix)
   if num_guard(x) then
     return V.NOTHING
   end
-  radix = radix == nil and 10 or math.floor(radix)
+  radix = (radix == nil or V.is_nothing(radix)) and 10 or math.floor(radix)
   if radix < 2 or radix > 36 then
     H.err("D3100", { value = radix, message = "$formatBase radix out of range" })
   end
@@ -123,6 +123,6 @@ R.formatBase = H.def(function(x, radix)
     s = "-" .. s
   end
   return s
-end, 1, 2)
+end, 1, 2, "<n-n?:s>")
 
 return R
