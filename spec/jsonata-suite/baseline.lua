@@ -284,6 +284,7 @@ return {
   ["function-boolean/case017"] = true,
   ["function-boolean/case018"] = true,
   ["function-boolean/case019"] = true,
+  ["function-boolean/case020"] = true,
   ["function-boolean/case021"] = true,
   ["function-boolean/case022"] = true,
   ["function-boolean/case023"] = true,

@@ -4,6 +4,9 @@ local H = require("jsonata.functions.helpers")
 local R = {}
 
 R.boolean = H.def(function(x)
+  if V.is_nothing(x) then
+    return V.NOTHING
+  end
   return H.truthy(x)
 end, 1, 1, "<x-:b>")
 
