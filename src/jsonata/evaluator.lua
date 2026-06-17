@@ -42,7 +42,9 @@ local function eval_binary(node, input, env)
   local rhs = evaluate(node.rhs, input, env)
 
   if op == "&" then
-    return functions.string.impl(lhs) .. functions.string.impl(rhs)
+    local lstr = V.is_nothing(lhs) and "" or functions.string.impl(lhs)
+    local rstr = V.is_nothing(rhs) and "" or functions.string.impl(rhs)
+    return lstr .. rstr
   end
 
   if op == "+" or op == "-" or op == "*" or op == "/" or op == "%" then
@@ -755,7 +757,8 @@ local function _evaluate(node, input, env)
     for _, pair in ipairs(node.pairs) do
       local k = evaluate(pair[1], input, env)
       local val = evaluate(pair[2], input, env)
-      V.obj_set(obj, functions.string.impl(k), val)
+      local kstr = V.is_nothing(k) and "" or functions.string.impl(k)
+      V.obj_set(obj, kstr, val)
     end
     return obj
   elseif t == "function" then

@@ -51,3 +51,42 @@ describe("builtin signatures: $sift / $each context injection via '-'", function
     assert.are.equal("T0411", err.code)
   end)
 end)
+
+describe("builtin signatures: '-' string/URL", function()
+  local function code(src)
+    local ok, err = pcall(run, src)
+    assert.is_false(ok)
+    return err.code
+  end
+
+  it("rejects a wrong-typed arg with T0410", function()
+    assert.are.equal("T0410", code("$uppercase(5)"))
+    assert.are.equal("T0410", code("$length([1,2])"))
+    assert.are.equal("T0410", code('$substring("abc", "x")'))
+    assert.are.equal("T0410", code('$pad("x", "y")'))
+    assert.are.equal("T0410", code("$encodeUrl(5)"))
+  end)
+
+  it("injects the context for a '-' first param", function()
+    assert.are.equal("HELLO", run("$uppercase()", "hello"))
+    assert.are.equal(5, run("$length()", "hello"))
+    assert.are.equal("ell", run("$substring(1, 3)", "hello"))
+  end)
+
+  it("raises T0411 when the context is the wrong type", function()
+    local ok, err = pcall(run, "$uppercase()", 5)
+    assert.is_false(ok)
+    assert.are.equal("T0411", err.code)
+  end)
+
+  it("propagates undefined (NOTHING in -> NOTHING out)", function()
+    assert.is_nil(run("nope.$uppercase()", {}))
+    assert.is_nil(run("$string(nope)", {}))
+  end)
+
+  it("still computes normally", function()
+    assert.are.equal("HI", run('$uppercase("hi")'))
+    assert.are.equal(" xx", run('$pad("xx", -3)'))
+    assert.are.equal("a%20b", run('$encodeUrl("a b")'))
+  end)
+end)
