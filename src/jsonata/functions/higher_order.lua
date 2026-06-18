@@ -9,9 +9,9 @@ local R = {}
 -- evaluator -> functions -> higher_order -> evaluator. By the time any HOF
 -- runs, evaluator.apply is defined; require is memoized so this is cheap.
 local eval
-local function apply(proc, args)
+local function apply(proc, args, context)
   eval = eval or require("jsonata.evaluator")
-  return eval.apply(proc, args)
+  return eval.apply(proc, args, context)
 end
 
 -- Arity a callback declares: lambda -> #params; builtin -> stored arity (= min).
@@ -148,7 +148,7 @@ R.single = H.def(function(arr, fn)
 end, 1, 2)
 
 -- $sift(object, function): keep key/value pairs whose callback result is truthy.
--- Empty result -> nothing. inject_context: a bare $sift(fn) uses the current input.
+-- Empty result -> nothing. The '<o-f?:o>' signature's '-' marker injects the context object for the bare $sift(fn) form.
 R.sift = H.def(function(obj, fn)
   if not V.is_object(obj) then
     return V.NOTHING
@@ -164,8 +164,7 @@ R.sift = H.def(function(obj, fn)
     return V.NOTHING
   end
   return result
-end, 2, 2)
-R.sift.inject_context = true
+end, 2, 2, "<o-f?:o>")
 
 -- $each(object, function): collect non-nothing callback results into a sequence.
 R.each = H.def(function(obj, fn)
@@ -181,8 +180,7 @@ R.each = H.def(function(obj, fn)
     end
   end
   return seq
-end, 2, 2)
-R.each.inject_context = true
+end, 2, 2, "<o-f:a>")
 
 -- True iff every element of `arr` has JSONata type `t`.
 local function all_of_type(arr, t)

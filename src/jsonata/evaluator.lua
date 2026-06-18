@@ -42,7 +42,9 @@ local function eval_binary(node, input, env)
   local rhs = evaluate(node.rhs, input, env)
 
   if op == "&" then
-    return functions.string.impl(lhs) .. functions.string.impl(rhs)
+    local lstr = V.is_nothing(lhs) and "" or functions.string.impl(lhs)
+    local rstr = V.is_nothing(rhs) and "" or functions.string.impl(rhs)
+    return lstr .. rstr
   end
 
   if op == "+" or op == "-" or op == "*" or op == "/" or op == "%" then
@@ -755,7 +757,8 @@ local function _evaluate(node, input, env)
     for _, pair in ipairs(node.pairs) do
       local k = evaluate(pair[1], input, env)
       local val = evaluate(pair[2], input, env)
-      V.obj_set(obj, functions.string.impl(k), val)
+      local kstr = V.is_nothing(k) and "" or functions.string.impl(k)
+      V.obj_set(obj, kstr, val)
     end
     return obj
   elseif t == "function" then
@@ -896,6 +899,9 @@ function M.apply(proc, args, context)
     return M.apply_lambda(proc, args, context)
   end
   if type(proc) == "table" and proc._jsonata_function then
+    if proc.signature then
+      args = proc.signature.validate(args, context)
+    end
     return proc.impl((table.unpack or unpack)(args, 1, #args))
   end
   errors.raise("T1006", { value = proc })
@@ -926,12 +932,6 @@ function M.eval_function(node, input, env)
   local args = {}
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
-  end
-  -- Context injection: $sift/$each carry inject_context; a bare call (only the
-  -- function arg) uses the current input as the object argument. This is our
-  -- minimal stand-in for jsonata's '-' context signature marker.
-  if type(proc) == "table" and proc.inject_context and #args == 1 then
-    table.insert(args, 1, input)
   end
   local result = M.apply(proc, args, input)
   if V.is_sequence(result) then

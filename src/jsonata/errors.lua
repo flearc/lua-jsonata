@@ -48,6 +48,33 @@ function M.is_error(x)
   return type(x) == "table" and getmetatable(x) == ERROR_MT
 end
 
+-- Render a value the way jsonata's JSON.stringify would for {{x}} interpolation
+-- (the scalar fields error messages reference: index/token/type/value).
+local function render(v)
+  if v == nil then
+    return "undefined"
+  elseif type(v) == "string" then
+    return '"' .. v:gsub('"', '\\"') .. '"'
+  else
+    return tostring(v)
+  end
+end
+
+-- Port of jsonata populateMessage: {{{k}}} -> raw field; {{k}} -> JSON.stringify(field).
+local function populate(template, err)
+  if type(template) ~= "string" then
+    return template
+  end
+  template = template:gsub("{{{([%w_]+)}}}", function(k)
+    local v = err[k]
+    return v == nil and "undefined" or tostring(v)
+  end)
+  template = template:gsub("{{([%w_]+)}}", function(k)
+    return render(err[k])
+  end)
+  return template
+end
+
 -- code: string error code; info: optional table with position/token/value/message
 function M.raise(code, info)
   info = info or {}
@@ -61,6 +88,7 @@ function M.raise(code, info)
     value2 = info.value2,
     message = info.message or MESSAGES[code] or code,
   }, ERROR_MT)
+  err.message = populate(err.message, err)
   error(err, 0)
 end
 

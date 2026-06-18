@@ -24,9 +24,12 @@ local function to_string(x)
 end
 R._to_string = to_string
 
-R.string = H.def(function(x)
+R.string = H.def(function(x, prettify)
+  if V.is_nothing(x) then
+    return V.NOTHING
+  end
   return to_string(x)
-end, 1)
+end, 1, 2, "<x-b?:s>")
 
 local function nothing_guard(x)
   return V.is_nothing(x)
@@ -55,18 +58,16 @@ local function require_number(x, fname, pos)
 end
 
 R.length = H.def(function(s)
-  if not require_string(s, "length", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
   return H.utf8_len(s)
-end, 1)
+end, 1, 1, "<s-:n>")
 
 R.substring = H.def(function(s, start, length)
-  if not require_string(s, "substring", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
-  require_number(start, "substring", 2)
-  require_number(length, "substring", 3)
   local chars = H.utf8_chars(s)
   local n = #chars
   start = math.floor(start)
@@ -74,7 +75,7 @@ R.substring = H.def(function(s, start, length)
     start = math.max(n + start, 0)
   end
   local stop
-  if length == nil then
+  if length == nil or V.is_nothing(length) then
     stop = n
   else
     stop = math.min(start + math.max(math.floor(length), 0), n)
@@ -84,60 +85,58 @@ R.substring = H.def(function(s, start, length)
     out[#out + 1] = chars[i]
   end
   return table.concat(out)
-end, 2, 3)
+end, 2, 3, "<s-nn?:s>")
 
 R.substringBefore = H.def(function(s, pattern)
-  if not require_string(s, "substringBefore", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
-  require_string(pattern, "substringBefore", 2)
   local idx = string.find(s, pattern, 1, true)
   if not idx then
     return s
   end
   return s:sub(1, idx - 1)
-end, 2)
+end, 2, 2, "<s-s:s>")
 
 R.substringAfter = H.def(function(s, pattern)
-  if not require_string(s, "substringAfter", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
-  require_string(pattern, "substringAfter", 2)
   local idx = string.find(s, pattern, 1, true)
   if not idx then
     return s
   end
   return s:sub(idx + #pattern)
-end, 2)
+end, 2, 2, "<s-s:s>")
 
 R.uppercase = H.def(function(s)
-  if not require_string(s, "uppercase", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
   return string.upper(s)
-end, 1)
+end, 1, 1, "<s-:s>")
 
 R.lowercase = H.def(function(s)
-  if not require_string(s, "lowercase", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
   return string.lower(s)
-end, 1)
+end, 1, 1, "<s-:s>")
 
 R.trim = H.def(function(s)
-  if not require_string(s, "trim", 1) then
+  if V.is_nothing(s) then
     return V.NOTHING
   end
   s = s:gsub("%s+", " ")
   s = s:gsub("^ ", ""):gsub(" $", "")
   return s
-end, 1)
+end, 1, 1, "<s-:s>")
 
 R.pad = H.def(function(s, width, char)
   if nothing_guard(s) then
     return V.NOTHING
   end
-  char = (char == nil or char == "") and " " or char
+  char = (char == nil or V.is_nothing(char) or char == "") and " " or char
   width = math.floor(width)
   local len = H.utf8_len(s)
   local need = math.abs(width) - len
@@ -154,7 +153,7 @@ R.pad = H.def(function(s, width, char)
     return padding .. s
   end
   return s .. padding
-end, 2, 3)
+end, 2, 3, "<s-ns?:s>")
 
 R.contains = H.def(function(s, sub)
   if not require_string(s, "contains", 1) then
@@ -210,25 +209,15 @@ R.join = H.def(function(arr, sep)
   if nothing_guard(arr) then
     return V.NOTHING
   end
-  if not V.is_array(arr) then
-    H.err("T0412", { name = "join", position = 1, value = arr })
+  if V.is_nothing(sep) then
+    sep = ""
   end
-  -- All elements must be strings
-  for i = 1, #arr do
-    if V.typeof(arr[i]) ~= "string" then
-      H.err("T0412", { name = "join", position = 1, value = arr })
-    end
-  end
-  if sep ~= nil and V.typeof(sep) ~= "string" then
-    H.err("T0410", { name = "join", position = 2, value = sep })
-  end
-  sep = sep or ""
   local parts = {}
   for i = 1, #arr do
     parts[i] = arr[i]
   end
   return table.concat(parts, sep)
-end, 1, 2)
+end, 1, 2, "<a<s>s?:s>")
 
 -- Percent-encode every byte not in `unreserved`.
 local function percent_encode(s, unreserved)
@@ -253,27 +242,27 @@ R.encodeUrlComponent = H.def(function(s)
     return V.NOTHING
   end
   return percent_encode(s, COMPONENT_UNRESERVED)
-end, 1)
+end, 1, 1, "<s-:s>")
 
 R.encodeUrl = H.def(function(s)
   if V.is_nothing(s) then
     return V.NOTHING
   end
   return percent_encode(s, URL_UNRESERVED)
-end, 1)
+end, 1, 1, "<s-:s>")
 
 R.decodeUrlComponent = H.def(function(s)
   if V.is_nothing(s) then
     return V.NOTHING
   end
   return percent_decode(s)
-end, 1)
+end, 1, 1, "<s-:s>")
 
 R.decodeUrl = H.def(function(s)
   if V.is_nothing(s) then
     return V.NOTHING
   end
   return percent_decode(s)
-end, 1)
+end, 1, 1, "<s-:s>")
 
 return R

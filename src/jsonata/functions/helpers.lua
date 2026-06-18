@@ -9,9 +9,10 @@ local H = {}
 -- arity = number of REQUIRED args (= min); nil means unconstrained/variadic.
 -- Mirrors jsonata getFunctionArity (implementation.length). HOFs read this to
 -- decide how many of (value,index,array) to pass a callback.
-function H.def(impl, min, max)
+function H.def(impl, min, max, sig)
+  local signature = sig and require("jsonata.signature").parse(sig) or nil
   if min == nil then
-    return { _jsonata_function = true, impl = impl, arity = nil }
+    return { _jsonata_function = true, impl = impl, arity = nil, signature = signature }
   end
   max = max or min
   local checked = function(...)
@@ -21,7 +22,7 @@ function H.def(impl, min, max)
     end
     return impl(...)
   end
-  return { _jsonata_function = true, impl = checked, arity = min }
+  return { _jsonata_function = true, impl = checked, arity = min, signature = signature }
 end
 
 -- JSONata truthiness (migrated unchanged from M1 functions.lua).

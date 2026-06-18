@@ -5,7 +5,8 @@ describe("builtins", function()
   it("$string converts values", function()
     assert.are.equal("5", F.string.impl(5))
     assert.are.equal("true", F.string.impl(true))
-    assert.are.equal("", F.string.impl(V.NOTHING))
+    -- M5b: $string(undefined) is undefined (jsonata-faithful); '&' coerces to "" inline
+    assert.are.equal(V.NOTHING, F.string.impl(V.NOTHING))
     assert.are.equal("null", F.string.impl(V.NULL))
   end)
 
@@ -30,7 +31,7 @@ describe("builtins", function()
     assert.is_false(F.boolean.impl(0))
     assert.is_true(F.boolean.impl(V.array({ 1 })))
     assert.is_false(F.boolean.impl(V.array({})))
-    assert.is_false(F.boolean.impl(V.NOTHING))
+    assert.are.equal(V.NOTHING, F.boolean.impl(V.NOTHING))
   end)
 
   it("$not negates truthiness", function()

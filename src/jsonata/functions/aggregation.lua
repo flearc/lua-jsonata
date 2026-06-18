@@ -35,7 +35,7 @@ R.sum = H.def(function(x)
     total = total + v
   end
   return total
-end, 1)
+end, 1, 1, "<a<n>:n>")
 
 R.max = H.def(function(x)
   local nums = numbers(x)
@@ -49,7 +49,7 @@ R.max = H.def(function(x)
     end
   end
   return m
-end, 1)
+end, 1, 1, "<a<n>:n>")
 
 R.min = H.def(function(x)
   local nums = numbers(x)
@@ -63,7 +63,7 @@ R.min = H.def(function(x)
     end
   end
   return m
-end, 1)
+end, 1, 1, "<a<n>:n>")
 
 R.average = H.def(function(x)
   local nums = numbers(x)
@@ -75,6 +75,6 @@ R.average = H.def(function(x)
     total = total + v
   end
   return total / #nums
-end, 1)
+end, 1, 1, "<a<n>:n>")
 
 return R
