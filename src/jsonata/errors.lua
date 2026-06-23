@@ -42,6 +42,8 @@ local MESSAGES = {
   D3138 = "The single() function expected exactly 1 matching result.  Instead it matched more.",
   D3139 = "The single() function expected exactly 1 matching result.  Instead it matched 0.",
   D3141 = "$assert() statement failed",
+  D3120 = "Syntax error in expression passed to function eval: {{value}}",
+  D3121 = "Dynamic error evaluating the expression passed to function eval: {{value}}",
 }
 
 function M.is_error(x)
