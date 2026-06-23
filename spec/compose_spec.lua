@@ -57,3 +57,29 @@ describe("M5d: ~> function composition", function()
     assert.are.equal("HI", run("'hi' ~> $uppercase"))
   end)
 end)
+
+describe("M5d: ~> with a partial-application RHS", function()
+  local jsonata = require("jsonata")
+  local function run(src, input)
+    return jsonata.compile(src):evaluate(input)
+  end
+
+  it("composes two partials (case009 — both sides are functions)", function()
+    assert.are.equal("example", run('($domain := $substringAfter(?,"@") ~> $substringBefore(?,"."); $domain("john@example.com"))'))
+  end)
+
+  it("composes partials inline applied to a value", function()
+    assert.are.equal("example", run('"john@example.com" ~> $substringAfter(?, "@") ~> $substringBefore(?, ".")'))
+  end)
+
+  it("applies a partial RHS to a data lhs (fills the placeholder with lhs)", function()
+    assert.are.equal(25, run("5 ~> $power(?, 2)")) -- 5^2
+    assert.are.equal(32, run("5 ~> $power(2, ?)")) -- 2^5
+  end)
+
+  it("leaves the no-placeholder apply-with-args form unchanged", function()
+    assert.are.equal("hello", run('"hello world" ~> $substring(0, 5)'))
+    assert.are.equal("5", run("5 ~> $string"))
+    assert.are.equal(6, run("[1,2,3] ~> $sum"))
+  end)
+end)

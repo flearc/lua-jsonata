@@ -787,12 +787,25 @@ local function _evaluate(node, input, env)
     local lhs = evaluate(node.lhs, input, env)
     local rhs = node.rhs
     if rhs.type == "function" then
-      local proc = evaluate(rhs.procedure, input, env)
-      local args = { lhs }
+      local partial = false
       for _, a in ipairs(rhs.arguments) do
-        args[#args + 1] = evaluate(a, input, env)
+        if a.type == "placeholder" then
+          partial = true
+          break
+        end
       end
-      return M.apply(proc, args, input, env)
+      -- A bare invocation (no placeholders) is the apply-with-args form:
+      -- lhs ~> $f(a, b)  =>  $f(lhs, a, b). When the rhs carries a `?`
+      -- placeholder it is a partial application; fall through and evaluate it
+      -- as a function value to compose with (or apply to) the lhs below.
+      if not partial then
+        local proc = evaluate(rhs.procedure, input, env)
+        local args = { lhs }
+        for _, a in ipairs(rhs.arguments) do
+          args[#args + 1] = evaluate(a, input, env)
+        end
+        return M.apply(proc, args, input, env)
+      end
     end
     local proc = evaluate(rhs, input, env)
     if not M.is_function(proc) then
