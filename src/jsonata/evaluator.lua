@@ -894,13 +894,16 @@ evaluate = function(node, input, env)
 end
 
 -- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
-function M.apply(proc, args, context)
+function M.apply(proc, args, context, env)
   if type(proc) == "table" and proc._jsonata_lambda then
     return M.apply_lambda(proc, args, context)
   end
   if type(proc) == "table" and proc._jsonata_function then
     if proc.signature then
       args = proc.signature.validate(args, context)
+    end
+    if proc.wants_env then
+      return proc.impl(env, context, (table.unpack or unpack)(args, 1, #args))
     end
     return proc.impl((table.unpack or unpack)(args, 1, #args))
   end
@@ -933,7 +936,7 @@ function M.eval_function(node, input, env)
   for i, a in ipairs(node.arguments) do
     args[i] = evaluate(a, input, env)
   end
-  local result = M.apply(proc, args, input)
+  local result = M.apply(proc, args, input, env)
   if V.is_sequence(result) then
     return finalize_sequence(result, false)
   end
