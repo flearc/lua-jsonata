@@ -893,6 +893,11 @@ evaluate = function(node, input, env)
   return result
 end
 
+-- True iff `x` is a callable JSONata value (a lambda closure or a builtin).
+function M.is_function(x)
+  return type(x) == "table" and (x._jsonata_lambda or x._jsonata_function)
+end
+
 -- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
 function M.apply(proc, args, context, env)
   if type(proc) == "table" and proc._jsonata_lambda then
@@ -945,7 +950,7 @@ end
 
 -- Partial application: $f(?, x) -> a new function that fills the holes when applied.
 function M.partial(proc, argnodes, input, env)
-  if not (type(proc) == "table" and (proc._jsonata_lambda or proc._jsonata_function)) then
+  if not M.is_function(proc) then
     errors.raise("T1006", { value = proc })
   end
   local bound = {}

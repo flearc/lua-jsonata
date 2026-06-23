@@ -18,6 +18,7 @@ local MESSAGES = {
   T1003 = "Key in object structure must evaluate to a string; got: {{value}}",
   T1006 = "Attempted to invoke a non-function",
   T2001 = "The left side of an operator must evaluate to a number",
+  T2006 = "The right side of the function application operator ~> must be a function",
   T2002 = "The right side of an operator must evaluate to a number",
   T2003 = "The left side of the range operator (..) must evaluate to an integer",
   T2004 = "The right side of the range operator (..) must evaluate to an integer",
