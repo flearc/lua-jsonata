@@ -11,6 +11,7 @@ local categories = {
   require("jsonata.functions.array"),
   require("jsonata.functions.object"),
   require("jsonata.functions.higher_order"),
+  require("jsonata.functions.eval"),
 }
 
 M.registry = {}
