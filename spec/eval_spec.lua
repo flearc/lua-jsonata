@@ -78,3 +78,31 @@ describe("M5c: $eval", function()
     assert.are.equal(6, run("$eval('x*y*z', sub)", { sub = { x = 1, y = 2, z = 3 } }))
   end)
 end)
+
+describe("M5c: $eval outer-scope + error boundary", function()
+  local jsonata = require("jsonata")
+  local function run(src, input)
+    return jsonata.compile(src):evaluate(input)
+  end
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+
+  it("sees an outer-scope bound variable (option i)", function()
+    assert.are.equal(5, run("($x := 5; $eval('$x'))"))
+  end)
+
+  it("raises D3120 on a syntax error in the expression", function()
+    assert.are.equal("D3120", code("$eval('[1,#string(2),3]')"))
+  end)
+
+  it("raises D3121 on a runtime error in the expression", function()
+    assert.are.equal("D3121", code("$eval('[1,string(2),3]')"))
+  end)
+
+  it("can recurse", function()
+    assert.are.equal(2, run("$eval('$eval(\"1+1\")')"))
+  end)
+end)
