@@ -51,3 +51,30 @@ describe("M5c: M.apply wants_env hook", function()
     assert.are.equal(8, seen.b) -- NOT shifted by an env/input prefix
   end)
 end)
+
+describe("M5c: $eval", function()
+  local jsonata = require("jsonata")
+  local function run(src, input)
+    return jsonata.compile(src):evaluate(input)
+  end
+
+  it("parses and evaluates a literal expression", function()
+    assert.are.same({ 1, 2, 3 }, run("$eval('[1,2,3]')"))
+  end)
+
+  it("sees builtins in the evaluated string", function()
+    assert.are.same({ 1, "2", 3 }, run("$eval('[1,$string(2),3]')"))
+  end)
+
+  it("returns undefined for an undefined argument", function()
+    assert.is_nil(run("$eval(nope)", {}))
+  end)
+
+  it("evaluates against the current input by default", function()
+    assert.are.equal(6, run("$eval('a + b + c')", { a = 1, b = 2, c = 3 }))
+  end)
+
+  it("uses an explicit 2nd-arg context override", function()
+    assert.are.equal(6, run("$eval('x*y*z', sub)", { sub = { x = 1, y = 2, z = 3 } }))
+  end)
+end)
