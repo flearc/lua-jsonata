@@ -106,3 +106,32 @@ describe("M5c: $eval outer-scope + error boundary", function()
     assert.are.equal(2, run("$eval('$eval(\"1+1\")')"))
   end)
 end)
+
+describe("M5c: $eval via ~> and array focus (adversarial fixes)", function()
+  local jsonata = require("jsonata")
+  local function run(src, input)
+    return jsonata.compile(src):evaluate(input)
+  end
+
+  it("works when applied via ~> (env threaded, no crash)", function()
+    assert.are.equal(2, run("'1+1' ~> $eval"))
+  end)
+
+  it("sees outer-scope vars when applied via ~>", function()
+    assert.are.equal(8, run("($x := 7; '$x+1' ~> $eval)"))
+  end)
+
+  it("indexes a non-sequence array focus correctly", function()
+    assert.are.equal(10, run("$eval('$[0]', [10,20,30])"))
+    assert.are.equal(20, run("$eval('$[1]', [10,20,30])"))
+  end)
+
+  it("maps over a non-sequence array focus correctly", function()
+    assert.are.same({ 1, 2 }, run("$eval('$.a', [{'a':1},{'a':2}])"))
+  end)
+
+  it("still treats an input-independent expr the same (case008 intact)", function()
+    local r = run("$eval('{\"test\": 1}', [1,2,3])")
+    assert.are.equal(1, r.test)
+  end)
+end)

@@ -781,9 +781,9 @@ local function _evaluate(node, input, env)
       for _, a in ipairs(rhs.arguments) do
         args[#args + 1] = evaluate(a, input, env)
       end
-      return M.apply(proc, args, input)
+      return M.apply(proc, args, input, env)
     end
-    return M.apply(evaluate(rhs, input, env), { lhs }, input)
+    return M.apply(evaluate(rhs, input, env), { lhs }, input, env)
   elseif t == "transform" then
     return {
       _jsonata_function = true,
@@ -968,7 +968,7 @@ function M.partial(proc, argnodes, input, env)
       for k, pos in ipairs(holes) do
         args[pos] = fill[k]
       end
-      return M.apply(proc, args)
+      return M.apply(proc, args, input, env)
     end,
   }
 end

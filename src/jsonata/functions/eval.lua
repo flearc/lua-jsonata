@@ -29,9 +29,18 @@ local function eval_impl(env, input, expr, focus)
   end
 
   -- Pick the input: explicit focus overrides; else the threaded call-site input.
+  -- A non-sequence array focus carries the internal `cons` flag (from array
+  -- construction), which corrupts path steps; rebuild it clean (jsonata wraps a
+  -- non-sequence array focus so it's treated as a normal value).
   local target = focus
   if V.is_nothing(focus) then
     target = input
+  elseif V.is_array(focus) and not V.is_sequence(focus) then
+    local clean = {}
+    for i = 1, #focus do
+      clean[i] = focus[i]
+    end
+    target = V.array(clean)
   end
 
   -- Evaluate against the CURRENT env — any runtime error becomes D3121.
