@@ -5,6 +5,17 @@ local sort = require("jsonata.sort")
 
 local M = {}
 
+-- The function-composition meta-lambda (jsonata chainAST): parsed once, evaluated
+-- per-compose so the inner lambda closes over the specific $f/$g. Lazy-required to
+-- avoid an evaluator->parser load edge at module init.
+local chain_ast
+local function get_chain_ast()
+  if not chain_ast then
+    chain_ast = require("jsonata.parser").parse("function($f, $g){ function($x){ $g($f($x)) } }")
+  end
+  return chain_ast
+end
+
 local evaluate -- forward declaration
 
 local function as_number(x, code)
@@ -783,7 +794,16 @@ local function _evaluate(node, input, env)
       end
       return M.apply(proc, args, input, env)
     end
-    return M.apply(evaluate(rhs, input, env), { lhs }, input, env)
+    local proc = evaluate(rhs, input, env)
+    if not M.is_function(proc) then
+      errors.raise("T2006", { value = proc, position = node.position })
+    end
+    if M.is_function(lhs) then
+      -- compose: $f ~> $g  =>  λ($x){ $g($f($x)) }  (f first, then g)
+      local chain = evaluate(get_chain_ast(), input, env)
+      return M.apply(chain, { lhs, proc }, input, env)
+    end
+    return M.apply(proc, { lhs }, input, env)
   elseif t == "transform" then
     return {
       _jsonata_function = true,
