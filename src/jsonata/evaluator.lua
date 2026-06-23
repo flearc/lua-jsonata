@@ -5,6 +5,17 @@ local sort = require("jsonata.sort")
 
 local M = {}
 
+-- The function-composition meta-lambda (jsonata chainAST): parsed once, evaluated
+-- per-compose so the inner lambda closes over the specific $f/$g. Lazy-required to
+-- avoid an evaluator->parser load edge at module init.
+local chain_ast
+local function get_chain_ast()
+  if not chain_ast then
+    chain_ast = require("jsonata.parser").parse("function($f, $g){ function($x){ $g($f($x)) } }")
+  end
+  return chain_ast
+end
+
 local evaluate -- forward declaration
 
 local function as_number(x, code)
@@ -776,14 +787,36 @@ local function _evaluate(node, input, env)
     local lhs = evaluate(node.lhs, input, env)
     local rhs = node.rhs
     if rhs.type == "function" then
-      local proc = evaluate(rhs.procedure, input, env)
-      local args = { lhs }
+      local partial = false
       for _, a in ipairs(rhs.arguments) do
-        args[#args + 1] = evaluate(a, input, env)
+        if a.type == "placeholder" then
+          partial = true
+          break
+        end
       end
-      return M.apply(proc, args, input, env)
+      -- A bare invocation (no placeholders) is the apply-with-args form:
+      -- lhs ~> $f(a, b)  =>  $f(lhs, a, b). When the rhs carries a `?`
+      -- placeholder it is a partial application; fall through and evaluate it
+      -- as a function value to compose with (or apply to) the lhs below.
+      if not partial then
+        local proc = evaluate(rhs.procedure, input, env)
+        local args = { lhs }
+        for _, a in ipairs(rhs.arguments) do
+          args[#args + 1] = evaluate(a, input, env)
+        end
+        return M.apply(proc, args, input, env)
+      end
     end
-    return M.apply(evaluate(rhs, input, env), { lhs }, input, env)
+    local proc = evaluate(rhs, input, env)
+    if not M.is_function(proc) then
+      errors.raise("T2006", { value = proc, position = node.position })
+    end
+    if M.is_function(lhs) then
+      -- compose: $f ~> $g  =>  λ($x){ $g($f($x)) }  (f first, then g)
+      local chain = evaluate(get_chain_ast(), input, env)
+      return M.apply(chain, { lhs, proc }, input, env)
+    end
+    return M.apply(proc, { lhs }, input, env)
   elseif t == "transform" then
     return {
       _jsonata_function = true,
@@ -893,6 +926,11 @@ evaluate = function(node, input, env)
   return result
 end
 
+-- True iff `x` is a callable JSONata value (a lambda closure or a builtin).
+function M.is_function(x)
+  return type(x) == "table" and (x._jsonata_lambda or x._jsonata_function)
+end
+
 -- Apply a procedure (lambda closure or builtin) to a list of evaluated args.
 function M.apply(proc, args, context, env)
   if type(proc) == "table" and proc._jsonata_lambda then
@@ -945,7 +983,7 @@ end
 
 -- Partial application: $f(?, x) -> a new function that fills the holes when applied.
 function M.partial(proc, argnodes, input, env)
-  if not (type(proc) == "table" and (proc._jsonata_lambda or proc._jsonata_function)) then
+  if not M.is_function(proc) then
     errors.raise("T1006", { value = proc })
   end
   local bound = {}
