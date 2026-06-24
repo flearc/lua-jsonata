@@ -62,3 +62,84 @@ describe("M6c parser: validation errors", function()
     end)
   end)
 end)
+
+local function run(src, input)
+  return jsonata.compile(src):evaluate(input)
+end
+
+describe("M6c eval: #$v index binding (0-based, natural order)", function()
+  local NUMS = { 3, 1, 4, 1, 5, 9 }
+
+  it("$#$pos[$pos<3] keeps the first three (0-based index)", function()
+    assert.are.same({ 3, 1, 4 }, run("$#$pos[$pos<3]", NUMS))
+  end)
+
+  it("$#$pos[$pos<3][1] then positionally indexes the survivors", function()
+    assert.are.equal(1, run("$#$pos[$pos<3][1]", NUMS))
+  end)
+
+  it("$#$pos[$pos<3]^($)[-1] sorts the survivors and takes the last", function()
+    assert.are.equal(4, run("$#$pos[$pos<3]^($)[-1]", NUMS))
+  end)
+
+  it("index carries through a following step (per input item, 0-based)", function()
+    local DATA = {
+      Account = {
+        Order = {
+          { OrderID = "o1", Product = { { pid = 1 }, { pid = 2 } } },
+          { OrderID = "o2", Product = { { pid = 3 } } },
+        },
+      },
+    }
+    local res = run("Account.Order#$o.Product.{ 'pid': pid, 'oi': $o }", DATA)
+    assert.are.same({
+      { pid = 1, oi = 0 },
+      { pid = 2, oi = 0 },
+      { pid = 3, oi = 1 },
+    }, res)
+  end)
+end)
+
+describe("M6c eval: @$v focus binding (cross-product join)", function()
+  local DATA = {
+    order = { { oid = "A", pid = 1 }, { oid = "B", pid = 2 } },
+    product = {
+      { pid = 1, name = "Hat" },
+      { pid = 2, name = "Shoe" },
+      { pid = 1, name = "Cap" },
+    },
+  }
+
+  it("order@$o.product@$p[$o.pid=$p.pid] joins on pid", function()
+    local res = run("order@$o.product@$p[$o.pid=$p.pid].{ 'order': $o.oid, 'name': $p.name }", DATA)
+    assert.are.same({
+      { order = "A", name = "Hat" },
+      { order = "A", name = "Cap" },
+      { order = "B", name = "Shoe" },
+    }, res)
+  end)
+
+  it("focus does NOT advance @: product still evaluates from the root", function()
+    local res = run("order@$o.product@$p.{ 'o': $o.oid, 'p': $p.name }", DATA)
+    assert.are.equal(6, #res)
+  end)
+end)
+
+describe("M6c eval: deferred reorder cases don't crash (red is OK)", function()
+  it("$[[1..4]]#$pos[$pos>=2] evaluates to a structured value", function()
+    assert.has_no.errors(function()
+      run("$[[1..4]]#$pos[$pos>=2]", { 3, 1, 4, 1, 5, 9 })
+    end)
+  end)
+  it("$^($)#$pos[$pos<3] evaluates to a structured value", function()
+    assert.has_no.errors(function()
+      run("$^($)#$pos[$pos<3]", { 3, 1, 4, 1, 5, 9 })
+    end)
+  end)
+end)
+
+describe("M6c eval: % parent + plain paths still work (regression)", function()
+  it("a.b.%.c resolves the ancestor unchanged", function()
+    assert.are.equal(7, run("a.b.%.c", { a = { b = 1, c = 7 } }))
+  end)
+end)

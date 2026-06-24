@@ -88,8 +88,25 @@ local function eval_binary(node, input, env)
   elseif op == "!=" then
     return not M.deep_equal(lhs, rhs)
   elseif op == "<" or op == "<=" or op == ">" or op == ">=" then
+    -- Validate each DEFINED operand independently (jsonata skips undefined in
+    -- the type check); if either operand is undefined the result is undefined.
+    if not V.is_nothing(lhs) then
+      local lt = V.typeof(lhs)
+      if lt ~= "number" and lt ~= "string" then
+        errors.raise("T2010", { value = lhs })
+      end
+    end
+    if not V.is_nothing(rhs) then
+      local rt = V.typeof(rhs)
+      if rt ~= "number" and rt ~= "string" then
+        errors.raise("T2010", { value = rhs })
+      end
+    end
+    if V.is_nothing(lhs) or V.is_nothing(rhs) then
+      return V.NOTHING
+    end
     local lt, rt = V.typeof(lhs), V.typeof(rhs)
-    if (lt ~= "number" and lt ~= "string") or lt ~= rt then
+    if lt ~= rt then
       errors.raise("T2010", { value = lhs })
     end
     if op == "<" then
@@ -526,11 +543,28 @@ local function finalize_sequence(seq, keep_singleton)
 end
 M.finalize_sequence = finalize_sequence
 
+-- A path node is a tuple path when any of its steps carries .tuple. When such a
+-- path appears as a nested step inside an enclosing tuple stream (e.g. a focus-
+-- bound step that the parser wrapped in a path to attach a predicate), it must
+-- yield its tuple stream so the enclosing loop can merge its bindings (its $v),
+-- instead of collapsing to bare @ values.
+local function path_is_tuple(node)
+  if node.type ~= "path" then
+    return false
+  end
+  for _, s in ipairs(node.steps) do
+    if s.tuple then
+      return true
+    end
+  end
+  return false
+end
+
 -- Tuple-stream variant of eval_path: used when any step carries .tuple (an
 -- ancestor anchor wired by the parser). Tuples flow per item; a step with
 -- .ancestor binds its INPUT item under the slot label on every output tuple;
 -- sub-evaluations run with a per-tuple frame so `%` resolves via env lookup.
-local function eval_path_tuple(node, input, env)
+local function eval_path_tuple(node, input, env, want_tuples)
   local steps = node.steps
   local tuples
   local start = 1
@@ -554,6 +588,16 @@ local function eval_path_tuple(node, input, env)
       -- input item per tuple; for step 1 that is the path input itself)
       for j = 1, #tuples do
         tuples[j][steps[1].ancestor.label] = input
+      end
+    end
+    if steps[1].index then
+      for j = 1, #tuples do
+        tuples[j][steps[1].index] = j - 1
+      end
+    end
+    if steps[1].focus then
+      for j = 1, #tuples do
+        tuples[j][steps[1].focus] = tuples[j]["@"]
       end
     end
     if steps[1].predicate then
@@ -588,7 +632,14 @@ local function eval_path_tuple(node, input, env)
         local item = t["@"]
         if not V.is_nothing(item) then
           local frame = create_frame_from_tuple(env, t)
-          local res = eval_step_on_item(step, item, frame)
+          local res
+          if path_is_tuple(step) then
+            -- nested tuple path (e.g. focus/index step wrapped to hold a
+            -- predicate): evaluate it as a tuple stream so its bindings survive.
+            res = eval_path_tuple(step, item, frame, true)
+          else
+            res = eval_step_on_item(step, item, frame)
+          end
           if not V.is_nothing(res) then
             if V.is_sequence(res) and V.get_flag(res, "tuple_stream") then
               -- nested tuple-returning path: merge its bindings wholesale
@@ -607,7 +658,14 @@ local function eval_path_tuple(node, input, env)
               end
               for b = 1, #list do
                 local nt = copy_tuple(t)
-                nt["@"] = list[b]
+                if step.focus then
+                  nt[step.focus] = list[b] -- bind under $v; @ stays at the parent context
+                else
+                  nt["@"] = list[b]
+                end
+                if step.index then
+                  nt[step.index] = b - 1 -- 0-based position within this item's results
+                end
                 if step.ancestor then
                   nt[step.ancestor.label] = item
                 end
@@ -624,7 +682,7 @@ local function eval_path_tuple(node, input, env)
     end
   end
 
-  if node.tuple then
+  if node.tuple or want_tuples then
     local seq = V.sequence()
     for j = 1, #tuples do
       seq[j] = tuples[j]
