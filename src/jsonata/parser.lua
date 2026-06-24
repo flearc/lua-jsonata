@@ -520,6 +520,29 @@ do
   end
 end
 
+-- Context/index binding `@`/`#` (M6c). Both bp 80 (same as `.`/`[`); the led
+-- validates a variable rhs (S0214). processAST/flatten_path wire focus/index.
+do
+  local s = symbol("@", 80)
+  s.led = function(p, t, left)
+    local rhs = p.expression(80)
+    if rhs.type ~= "variable" then
+      errors.raise("S0214", { position = t.position, token = "@" })
+    end
+    return { type = "binary", value = "@", lhs = left, rhs = rhs, position = t.position }
+  end
+end
+do
+  local s = symbol("#", 80)
+  s.led = function(p, t, left)
+    local rhs = p.expression(80)
+    if rhs.type ~= "variable" then
+      errors.raise("S0214", { position = t.position, token = "#" })
+    end
+    return { type = "binary", value = "#", lhs = left, rhs = rhs, position = t.position }
+  end
+end
+
 function M.parse_raw(source)
   local p = make_parser(source)
   p.advance()
@@ -656,10 +679,34 @@ local function resolve_ancestry(path, ctx)
   end
 end
 
+-- M6c: `@` sets focus, `#` sets index, both mark the step .tuple. Only `@`
+-- validates position (S0215 after a predicate, S0216 after a sort); `#` indexes
+-- any step. If the lhs flattened to a nested path (e.g. a sort), bind its last step.
+local function mark_binding(step, node)
+  if step.type == "path" then
+    step = step.steps[#step.steps]
+  end
+  if node.value == "@" then
+    if step.predicate ~= nil or step.keepArray then
+      errors.raise("S0215", { position = node.position, token = "@" })
+    end
+    if step.type == "sort" then
+      errors.raise("S0216", { position = node.position, token = "@" })
+    end
+    step.focus = node.rhs.value
+  else
+    step.index = node.rhs.value
+  end
+  step.tuple = true
+end
+
 local function flatten_path(node, steps, ctx)
   if node.type == "binary" and node.value == "." then
     flatten_path(node.lhs, steps, ctx)
     flatten_path(node.rhs, steps, ctx)
+  elseif node.type == "binary" and (node.value == "@" or node.value == "#") then
+    flatten_path(node.lhs, steps, ctx)
+    mark_binding(steps[#steps], node)
   else
     steps[#steps + 1] = process_ast(node, ctx)
   end
@@ -757,6 +804,15 @@ process_ast = function(ast, ctx)
         steps[i] = { type = "name", value = steps[i].value, position = steps[i].position }
       end
     end
+    local path = { type = "path", steps = steps, position = ast.position }
+    resolve_ancestry(path, ctx)
+    return path
+  end
+  if ast.type == "binary" and (ast.value == "@" or ast.value == "#") then
+    -- top-level `@`/`#` whose lhs is not a `.`-path (e.g. `$#$pos`); flatten it
+    -- the same way and wrap the single step so the evaluator enters tuple mode.
+    local steps = {}
+    flatten_path(ast, steps, ctx)
     local path = { type = "path", steps = steps, position = ast.position }
     resolve_ancestry(path, ctx)
     return path
