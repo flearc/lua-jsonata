@@ -749,7 +749,10 @@ process_ast = function(ast, ctx)
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
     flatten_path(ast, steps, ctx)
-    for i = 2, #steps do
+    -- A string step after the path head selects a field (jsonata: `"x".y` ≡ `x.y`).
+    -- i=1 also covers a first-position quoted string. (Edge: `("x").y` collapses to a
+    -- bare string in the parser and is wrongly treated as a field here — obscure, accepted.)
+    for i = 1, #steps do
       if steps[i].type == "string" then
         steps[i] = { type = "name", value = steps[i].value, position = steps[i].position }
       end
