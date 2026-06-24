@@ -1,0 +1,116 @@
+local jsonata = require("jsonata")
+local function run(src, input)
+  return jsonata.compile(src):evaluate(input)
+end
+
+describe("M6a C-1: $$ root context", function()
+  it("$$ resolves to the root input", function()
+    assert.are.same({ a = 1 }, run("$$", { a = 1 }))
+  end)
+  it("$$ reaches root from a nested path step", function()
+    assert.are.same({ a = { b = 2 } }, run("a.$$", { a = { b = 2 } }))
+  end)
+  it("$$.field indexes the root", function()
+    assert.are.equal(1, run("$$.a", { a = 1 }))
+  end)
+  it("$ (current context) still works", function()
+    assert.are.equal(5, run("a.$", { a = 5 }))
+    assert.are.same({ x = 1 }, run("$", { x = 1 }))
+  end)
+end)
+
+describe("M6a B-3: $keys/$spread empty & scalar", function()
+  it("$keys of an empty result is undefined, not []", function()
+    assert.is_nil(run("$keys(5)"))
+    assert.is_nil(run("$keys({})"))
+  end)
+  it("$keys still returns the keys of an object", function()
+    assert.are.same({ "a", "b" }, run('$keys({"a":1, "b":2})'))
+  end)
+  it("$spread echoes a scalar argument", function()
+    assert.are.equal(5, run("$spread(5)"))
+    assert.is_true(run("$spread(true)"))
+  end)
+  it("$spread still spreads an object", function()
+    assert.are.same({ { a = 1 } }, run('$spread({"a":1})'))
+  end)
+end)
+
+describe("M6a C-4a: undefined-operand arithmetic", function()
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+  it("arithmetic with an undefined operand is undefined", function()
+    assert.is_nil(run("5 + nope", {}))
+    assert.is_nil(run("nope - 1", {}))
+    assert.is_nil(run("nope * 2", {}))
+    assert.is_nil(run("10 / nope", {}))
+    assert.is_nil(run("-nope", {}))
+  end)
+  it("normal arithmetic still works", function()
+    assert.are.equal(7, run("5 + 2"))
+    assert.are.equal(-3, run("-(1 + 2)"))
+  end)
+  it("a genuine non-number operand still raises a type error", function()
+    assert.are.equal("T2001", code("'x' + 5"))
+    assert.are.equal("T2002", code("5 + 'x'"))
+  end)
+  it("matches jsonata operand ordering (type error before undefined short-circuit)", function()
+    assert.are.equal("T2002", code("nope + 'x'", {})) -- undefined LHS, defined non-number RHS -> T2002
+    assert.are.equal("T2001", code("'x' + nope", {})) -- defined non-number LHS -> T2001
+    assert.is_nil(run("nope + 5", {})) -- undefined LHS, number RHS -> undefined
+    assert.is_nil(run("5 + nope", {})) -- number LHS, undefined RHS -> undefined
+    assert.are.equal("T2001", code("false + nope", {})) -- defined non-number LHS (case018) -> T2001
+  end)
+end)
+
+describe("M6a C-3: object-literal key rules", function()
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+  it("an undefined key skips the whole pair", function()
+    assert.are.same({}, run("{nope: 1}", {}))
+  end)
+  it("an undefined value omits the pair", function()
+    assert.are.same({}, run('{"a": nope}', {}))
+  end)
+  it("a non-string key raises T1003", function()
+    assert.are.equal("T1003", code('{1: "x"}'))
+  end)
+  it("a duplicate key raises D1009", function()
+    assert.are.equal("D1009", code('{"a":1, "a":2}'))
+  end)
+  it("a normal object literal still builds correctly", function()
+    assert.are.equal(2, run('{"a":1, "b":2}.b', {}))
+  end)
+end)
+
+describe("M6a adversarial fixes", function()
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+
+  it("$spread of an empty object/array is undefined", function()
+    assert.is_nil(run("$spread({})"))
+    assert.is_nil(run("$spread([])"))
+  end)
+
+  it("a duplicate object key with an undefined value still raises D1009", function()
+    assert.are.equal("D1009", code('{"a":1, "a":nope}', {}))
+    assert.are.equal("D1009", code('{"a":nope, "a":2}', {}))
+    assert.are.equal("D1009", code('{"a":nope, "a":nope}', {}))
+  end)
+
+  it("unary minus on a non-number raises D1002", function()
+    assert.are.equal("D1002", code("-'x'"))
+    assert.are.equal("D1002", code("-true"))
+    assert.is_nil(run("-nope", {})) -- undefined still propagates
+    assert.are.equal(-5, run("-5")) -- normal still works
+  end)
+end)

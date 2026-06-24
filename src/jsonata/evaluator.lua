@@ -59,8 +59,17 @@ local function eval_binary(node, input, env)
   end
 
   if op == "+" or op == "-" or op == "*" or op == "/" or op == "%" then
-    local a = as_number(lhs, "T2001")
-    local b = as_number(rhs, "T2002")
+    if not V.is_nothing(lhs) and V.typeof(lhs) ~= "number" then
+      errors.raise("T2001", { value = lhs })
+    end
+    if not V.is_nothing(rhs) and V.typeof(rhs) ~= "number" then
+      errors.raise("T2002", { value = rhs })
+    end
+    if V.is_nothing(lhs) or V.is_nothing(rhs) then
+      return V.NOTHING
+    end
+    local a = lhs
+    local b = rhs
     if op == "+" then
       return a + b
     elseif op == "-" then
@@ -696,7 +705,14 @@ local function _evaluate(node, input, env)
     return V.NULL
   elseif t == "unary" then
     if node.value == "-" then
-      return -as_number(evaluate(node.expression, input, env), "T2001")
+      local v = evaluate(node.expression, input, env)
+      if V.is_nothing(v) then
+        return V.NOTHING
+      end
+      if V.typeof(v) ~= "number" then
+        errors.raise("D1002", { value = v })
+      end
+      return -v
     end
     errors.raise("S0211", { token = node.value })
   elseif t == "binary" then
@@ -765,11 +781,22 @@ local function _evaluate(node, input, env)
     return arr
   elseif t == "object" then
     local obj = V.object()
+    local seen = {}
     for _, pair in ipairs(node.pairs) do
       local k = evaluate(pair[1], input, env)
-      local val = evaluate(pair[2], input, env)
-      local kstr = V.is_nothing(k) and "" or functions.string.impl(k)
-      V.obj_set(obj, kstr, val)
+      if not V.is_nothing(k) then -- undefined key: skip the whole pair
+        if V.typeof(k) ~= "string" then
+          errors.raise("T1003", { value = k })
+        end
+        if seen[k] then -- duplicate key (regardless of value)
+          errors.raise("D1009", { value = k })
+        end
+        seen[k] = true
+        local val = evaluate(pair[2], input, env)
+        if not V.is_nothing(val) then -- undefined value: omit the pair
+          V.obj_set(obj, k, val)
+        end
+      end
     end
     return obj
   elseif t == "function" then

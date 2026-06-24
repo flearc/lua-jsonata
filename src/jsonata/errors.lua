@@ -29,6 +29,7 @@ local MESSAGES = {
   T2012 = "The delete clause of the transform expression must evaluate to an array of strings",
   -- Dynamic / runtime errors
   D1001 = "Number out of range to be formatted",
+  D1002 = "Cannot negate a non-numeric value: {{value}}",
   D1009 = "Multiple key definitions evaluate to same key: {{value}}",
   D2014 = "The size of the sequence allocated by the range operator (..) must not exceed 1e7.  Attempted to allocate {{value}}.",
   D3001 = "Unsupported in M1",

@@ -25,6 +25,9 @@ R.keys = H.def(function(x)
       end
     end
   end
+  if #out == 0 then
+    return V.NOTHING
+  end
   return out
 end, 1, 1, "<x-:a<s>>")
 
@@ -75,6 +78,11 @@ R.spread = H.def(function(x)
         spread_obj(x[i])
       end
     end
+  else
+    return x -- scalar: jsonata functionSpread echoes the argument unchanged
+  end
+  if #out == 0 then
+    return V.NOTHING
   end
   return out
 end, 1, 1, "<x-:a<o>>")
