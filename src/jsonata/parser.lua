@@ -203,6 +203,9 @@ do
       expressions[#expressions + 1] = p.expression(0)
       while p.node.id == ";" do
         p.advance()
+        if p.node.id == ")" then
+          break
+        end
         expressions[#expressions + 1] = p.expression(0)
       end
     end
