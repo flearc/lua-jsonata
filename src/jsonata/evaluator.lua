@@ -107,7 +107,7 @@ local function eval_binary(node, input, env)
     end
     local lt, rt = V.typeof(lhs), V.typeof(rhs)
     if lt ~= rt then
-      errors.raise("T2010", { value = lhs })
+      errors.raise("T2009", { value = lhs, value2 = rhs })
     end
     if op == "<" then
       return lhs < rhs

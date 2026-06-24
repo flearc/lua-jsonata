@@ -27,6 +27,7 @@ local MESSAGES = {
   T2004 = "The right side of the range operator (..) must evaluate to an integer",
   T2007 = "Type mismatch when comparing values {{value}} and {{value2}} in order-by clause",
   T2008 = "The expressions within an order-by clause must evaluate to numeric or string values",
+  T2009 = "The values {{value}} and {{value2}} either side of operator {{token}} must be of the same data type",
   T2010 = "Operands of comparison must both be numbers or both be strings",
   T2011 = "The insert/update clause of the transform expression must evaluate to an object",
   T2012 = "The delete clause of the transform expression must evaluate to an array of strings",
