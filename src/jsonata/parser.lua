@@ -203,6 +203,9 @@ do
       expressions[#expressions + 1] = p.expression(0)
       while p.node.id == ";" do
         p.advance()
+        if p.node.id == ")" then
+          break
+        end
         expressions[#expressions + 1] = p.expression(0)
       end
     end
@@ -257,6 +260,10 @@ do
     return { type = "array", expressions = expressions, position = t.position }
   end
   s.led = function(p, t, left)
+    if p.node.id == "]" then
+      p.advance()
+      return { type = "predicate", expr = left, keepArray = true, position = t.position }
+    end
     local filter = p.expression(0)
     if p.node.id ~= "]" then
       errors.raise("S0203", { position = p.node.position, token = "]" })
@@ -674,7 +681,6 @@ process_ast = function(ast, ctx)
   end
   if ast.type == "predicate" then
     local target = process_ast(ast.expr, ctx)
-    local filter = process_ast(ast.filter, ctx)
     local step, path
     if target.type == "path" then
       path = target
@@ -683,6 +689,12 @@ process_ast = function(ast, ctx)
       step = target
       path = { type = "path", steps = { target }, position = ast.position }
     end
+    if ast.keepArray then
+      step.keepArray = true
+      push_ancestry(path, step)
+      return path
+    end
+    local filter = process_ast(ast.filter, ctx)
     if filter.seekingParent ~= nil then
       for _, slot in ipairs(filter.seekingParent) do
         if slot.level == 1 then
@@ -737,6 +749,14 @@ process_ast = function(ast, ctx)
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
     flatten_path(ast, steps, ctx)
+    -- A string step after the path head selects a field (jsonata: `"x".y` ≡ `x.y`).
+    -- i=1 also covers a first-position quoted string. (Edge: `("x").y` collapses to a
+    -- bare string in the parser and is wrongly treated as a field here — obscure, accepted.)
+    for i = 1, #steps do
+      if steps[i].type == "string" then
+        steps[i] = { type = "name", value = steps[i].value, position = steps[i].position }
+      end
+    end
     local path = { type = "path", steps = steps, position = ast.position }
     resolve_ancestry(path, ctx)
     return path
