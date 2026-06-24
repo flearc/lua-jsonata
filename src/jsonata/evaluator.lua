@@ -780,9 +780,18 @@ local function _evaluate(node, input, env)
     local obj = V.object()
     for _, pair in ipairs(node.pairs) do
       local k = evaluate(pair[1], input, env)
-      local val = evaluate(pair[2], input, env)
-      local kstr = V.is_nothing(k) and "" or functions.string.impl(k)
-      V.obj_set(obj, kstr, val)
+      if not V.is_nothing(k) then -- undefined key: skip the whole pair
+        if V.typeof(k) ~= "string" then
+          errors.raise("T1003", { value = k })
+        end
+        local val = evaluate(pair[2], input, env)
+        if not V.is_nothing(val) then -- undefined value: omit the pair
+          if not V.is_nothing(V.obj_get(obj, k)) then
+            errors.raise("D1009", { value = k })
+          end
+          V.obj_set(obj, k, val)
+        end
+      end
     end
     return obj
   elseif t == "function" then
