@@ -737,6 +737,11 @@ process_ast = function(ast, ctx)
   if ast.type == "binary" and ast.value == "." then
     local steps = {}
     flatten_path(ast, steps, ctx)
+    for i = 2, #steps do
+      if steps[i].type == "string" then
+        steps[i] = { type = "name", value = steps[i].value, position = steps[i].position }
+      end
+    end
     local path = { type = "path", steps = steps, position = ast.position }
     resolve_ancestry(path, ctx)
     return path
