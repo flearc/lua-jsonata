@@ -35,3 +35,33 @@ describe("M6a B-3: $keys/$spread empty & scalar", function()
     assert.are.same({ { a = 1 } }, run('$spread({"a":1})'))
   end)
 end)
+
+describe("M6a C-4a: undefined-operand arithmetic", function()
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+  it("arithmetic with an undefined operand is undefined", function()
+    assert.is_nil(run("5 + nope", {}))
+    assert.is_nil(run("nope - 1", {}))
+    assert.is_nil(run("nope * 2", {}))
+    assert.is_nil(run("10 / nope", {}))
+    assert.is_nil(run("-nope", {}))
+  end)
+  it("normal arithmetic still works", function()
+    assert.are.equal(7, run("5 + 2"))
+    assert.are.equal(-3, run("-(1 + 2)"))
+  end)
+  it("a genuine non-number operand still raises a type error", function()
+    assert.are.equal("T2001", code("'x' + 5"))
+    assert.are.equal("T2002", code("5 + 'x'"))
+  end)
+  it("matches jsonata operand ordering (type error before undefined short-circuit)", function()
+    assert.are.equal("T2002", code("nope + 'x'", {})) -- undefined LHS, defined non-number RHS -> T2002
+    assert.are.equal("T2001", code("'x' + nope", {})) -- defined non-number LHS -> T2001
+    assert.is_nil(run("nope + 5", {})) -- undefined LHS, number RHS -> undefined
+    assert.is_nil(run("5 + nope", {})) -- number LHS, undefined RHS -> undefined
+    assert.are.equal("T2001", code("false + nope", {})) -- defined non-number LHS (case018) -> T2001
+  end)
+end)

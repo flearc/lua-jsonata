@@ -59,8 +59,17 @@ local function eval_binary(node, input, env)
   end
 
   if op == "+" or op == "-" or op == "*" or op == "/" or op == "%" then
-    local a = as_number(lhs, "T2001")
-    local b = as_number(rhs, "T2002")
+    if not V.is_nothing(lhs) and V.typeof(lhs) ~= "number" then
+      errors.raise("T2001", { value = lhs })
+    end
+    if not V.is_nothing(rhs) and V.typeof(rhs) ~= "number" then
+      errors.raise("T2002", { value = rhs })
+    end
+    if V.is_nothing(lhs) or V.is_nothing(rhs) then
+      return V.NOTHING
+    end
+    local a = lhs
+    local b = rhs
     if op == "+" then
       return a + b
     elseif op == "-" then
@@ -696,7 +705,11 @@ local function _evaluate(node, input, env)
     return V.NULL
   elseif t == "unary" then
     if node.value == "-" then
-      return -as_number(evaluate(node.expression, input, env), "T2001")
+      local v = evaluate(node.expression, input, env)
+      if V.is_nothing(v) then
+        return V.NOTHING
+      end
+      return -as_number(v, "T2001")
     end
     errors.raise("S0211", { token = node.value })
   elseif t == "binary" then
