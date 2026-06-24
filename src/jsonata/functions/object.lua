@@ -81,6 +81,9 @@ R.spread = H.def(function(x)
   else
     return x -- scalar: jsonata functionSpread echoes the argument unchanged
   end
+  if #out == 0 then
+    return V.NOTHING
+  end
   return out
 end, 1, 1, "<x-:a<o>>")
 

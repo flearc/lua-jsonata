@@ -709,7 +709,10 @@ local function _evaluate(node, input, env)
       if V.is_nothing(v) then
         return V.NOTHING
       end
-      return -as_number(v, "T2001")
+      if V.typeof(v) ~= "number" then
+        errors.raise("D1002", { value = v })
+      end
+      return -v
     end
     errors.raise("S0211", { token = node.value })
   elseif t == "binary" then
@@ -778,17 +781,19 @@ local function _evaluate(node, input, env)
     return arr
   elseif t == "object" then
     local obj = V.object()
+    local seen = {}
     for _, pair in ipairs(node.pairs) do
       local k = evaluate(pair[1], input, env)
       if not V.is_nothing(k) then -- undefined key: skip the whole pair
         if V.typeof(k) ~= "string" then
           errors.raise("T1003", { value = k })
         end
+        if seen[k] then -- duplicate key (regardless of value)
+          errors.raise("D1009", { value = k })
+        end
+        seen[k] = true
         local val = evaluate(pair[2], input, env)
         if not V.is_nothing(val) then -- undefined value: omit the pair
-          if not V.is_nothing(V.obj_get(obj, k)) then
-            errors.raise("D1009", { value = k })
-          end
           V.obj_set(obj, k, val)
         end
       end

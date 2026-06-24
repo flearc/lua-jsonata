@@ -88,3 +88,29 @@ describe("M6a C-3: object-literal key rules", function()
     assert.are.equal(2, run('{"a":1, "b":2}.b', {}))
   end)
 end)
+
+describe("M6a adversarial fixes", function()
+  local function code(src, input)
+    local ok, err = pcall(run, src, input)
+    assert.is_false(ok)
+    return err.code
+  end
+
+  it("$spread of an empty object/array is undefined", function()
+    assert.is_nil(run("$spread({})"))
+    assert.is_nil(run("$spread([])"))
+  end)
+
+  it("a duplicate object key with an undefined value still raises D1009", function()
+    assert.are.equal("D1009", code('{"a":1, "a":nope}', {}))
+    assert.are.equal("D1009", code('{"a":nope, "a":2}', {}))
+    assert.are.equal("D1009", code('{"a":nope, "a":nope}', {}))
+  end)
+
+  it("unary minus on a non-number raises D1002", function()
+    assert.are.equal("D1002", code("-'x'"))
+    assert.are.equal("D1002", code("-true"))
+    assert.is_nil(run("-nope", {})) -- undefined still propagates
+    assert.are.equal(-5, run("-5")) -- normal still works
+  end)
+end)
