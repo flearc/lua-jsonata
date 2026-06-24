@@ -260,6 +260,10 @@ do
     return { type = "array", expressions = expressions, position = t.position }
   end
   s.led = function(p, t, left)
+    if p.node.id == "]" then
+      p.advance()
+      return { type = "predicate", expr = left, keepArray = true, position = t.position }
+    end
     local filter = p.expression(0)
     if p.node.id ~= "]" then
       errors.raise("S0203", { position = p.node.position, token = "]" })
@@ -677,7 +681,6 @@ process_ast = function(ast, ctx)
   end
   if ast.type == "predicate" then
     local target = process_ast(ast.expr, ctx)
-    local filter = process_ast(ast.filter, ctx)
     local step, path
     if target.type == "path" then
       path = target
@@ -686,6 +689,12 @@ process_ast = function(ast, ctx)
       step = target
       path = { type = "path", steps = { target }, position = ast.position }
     end
+    if ast.keepArray then
+      step.keepArray = true
+      push_ancestry(path, step)
+      return path
+    end
+    local filter = process_ast(ast.filter, ctx)
     if filter.seekingParent ~= nil then
       for _, slot in ipairs(filter.seekingParent) do
         if slot.level == 1 then

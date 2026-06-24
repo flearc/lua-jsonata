@@ -502,6 +502,19 @@ local function eval_path(node, input, env)
   return context
 end
 
+-- True iff any step of this path (or of any nested path step) carries keepArray.
+local function path_keeps_array(node)
+  for _, s in ipairs(node.steps) do
+    if s.keepArray then
+      return true
+    end
+    if s.steps and path_keeps_array(s) then
+      return true
+    end
+  end
+  return false
+end
+
 -- Singleton unwrapping applied at the boundary of path/array results.
 local function finalize_sequence(seq, keep_singleton)
   if #seq == 0 then
@@ -750,6 +763,7 @@ local function _evaluate(node, input, env)
     end
     return V.obj_get(input, node.value)
   elseif t == "path" then
+    local keep = path_keeps_array(node)
     local tuple_mode = false
     for _, s in ipairs(node.steps) do
       if s.tuple then
@@ -762,9 +776,9 @@ local function _evaluate(node, input, env)
       if node.tuple then
         return seq -- tuple stream for an enclosing tuple step; no unwrap
       end
-      return finalize_sequence(seq, false)
+      return finalize_sequence(seq, keep)
     end
-    return finalize_sequence(eval_path(node, input, env), false)
+    return finalize_sequence(eval_path(node, input, env), keep)
   elseif t == "array" then
     local arr = V.array({})
     for _, e in ipairs(node.expressions) do
