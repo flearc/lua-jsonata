@@ -143,3 +143,59 @@ describe("M6c eval: % parent + plain paths still work (regression)", function()
     assert.are.equal(7, run("a.b.%.c", { a = { b = 1, c = 7 } }))
   end)
 end)
+
+local cjson = require("cjson")
+local function dataset(name)
+  local f = assert(io.open("spec/jsonata-suite/datasets/" .. name .. ".json"))
+  local raw = f:read("a")
+  f:close()
+  return cjson.decode(raw)
+end
+
+describe("M6d: tuple-stream group-by (the reduce half)", function()
+  local EMP = dataset("employees")
+
+  it("binding-in-value: { $e.FirstName: $join($c.Phone.number, ', ') }", function()
+    local res = run("Employee@$e.Contact@$c[$c.ssn = $e.SSN]{ $e.FirstName: $join($c.Phone.number, ', ') }", EMP)
+    assert.are.same({
+      Fred = "0203 544 1234, 01962 001234, 077 7700 1234",
+      Darren = "3146458343, 315 782 9279",
+      Hugh = "0280 564 6543, 0280 864 8643, 07735 853535",
+    }, res)
+  end)
+
+  it("context-in-value: { $e.FirstName: $c.Phone.number } accumulates per group", function()
+    local res = run("Employee@$e.Contact@$c[$c.ssn = $e.SSN]{ $e.FirstName: $c.Phone.number }", EMP)
+    assert.are.same({
+      Fred = { "0203 544 1234", "01962 001234", "077 7700 1234" },
+      Darren = { "3146458343", "315 782 9279" },
+      Hugh = { "0280 564 6543", "0280 864 8643", "07735 853535" },
+    }, res)
+  end)
+
+  it("index group-by: Account.Order#$i.Product{ $string(ProductID): $i }", function()
+    local res = run("Account.Order#$i.Product{ $string(ProductID): $i }", dataset("dataset5"))
+    assert.are.same({
+      ["345664"] = 1,
+      ["858236"] = 0,
+      ["858383"] = { 0, 1 },
+    }, res)
+  end)
+
+  it("non-tuple group-by is unchanged (regression)", function()
+    local DATA = {
+      Order = {
+        { type = "a", v = 1 },
+        { type = "b", v = 2 },
+        { type = "a", v = 3 },
+      },
+    }
+    assert.are.same({ a = { 1, 3 }, b = 2 }, run("Order{ type: v }", DATA))
+  end)
+
+  it("tuple group-by D1009: same key from two different pairs raises", function()
+    local ok, err = pcall(run, "Employee@$e.Contact@$c[$c.ssn = $e.SSN]{ 'k': $e.FirstName, 'k': $c.ssn }", EMP)
+    assert.is_false(ok)
+    assert.are.equal("D1009", err.code)
+  end)
+end)
