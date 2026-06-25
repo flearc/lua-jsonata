@@ -262,6 +262,67 @@ local function parse_decimal(value, format)
   return tonumber(digits)
 end
 
+-- ---- roman (jsonata decimalToRoman / romanToDecimal) ----------------------
+local ROMAN_NUMERALS = {
+  { 1000, "m" },
+  { 900, "cm" },
+  { 500, "d" },
+  { 400, "cd" },
+  { 100, "c" },
+  { 90, "xc" },
+  { 50, "l" },
+  { 40, "xl" },
+  { 10, "x" },
+  { 9, "ix" },
+  { 5, "v" },
+  { 4, "iv" },
+  { 1, "i" },
+}
+local ROMAN_VALUES = { M = 1000, D = 500, C = 100, L = 50, X = 10, V = 5, I = 1 }
+
+local function decimal_to_roman(value)
+  for _, numeral in ipairs(ROMAN_NUMERALS) do
+    if value >= numeral[1] then
+      return numeral[2] .. decimal_to_roman(value - numeral[1])
+    end
+  end
+  return ""
+end
+
+local function roman_to_decimal(roman)
+  local decimal, max = 0, 1
+  for i = #roman, 1, -1 do
+    local value = ROMAN_VALUES[roman:sub(i, i)]
+    if value < max then
+      decimal = decimal - value
+    else
+      max = value
+      decimal = decimal + value
+    end
+  end
+  return decimal
+end
+
+-- ---- letters (jsonata decimalToLetters / lettersToDecimal) ----------------
+local function decimal_to_letters(value, aChar)
+  local aCode = aChar:byte(1)
+  local letters = {}
+  while value > 0 do
+    table.insert(letters, 1, string.char((value - 1) % 26 + aCode))
+    value = math.floor((value - 1) / 26)
+  end
+  return table.concat(letters)
+end
+
+local function letters_to_decimal(letters, aChar)
+  local aCode = aChar:byte(1)
+  local decimal = 0
+  for i = 0, #letters - 1 do
+    decimal = decimal + (letters:byte(#letters - i) - aCode + 1) * 26 ^ i
+  end
+  return decimal
+end
+
 -- ---- format dispatch (jsonata _formatInteger) -----------------------------
 local function format_integer_spec(value, format)
   local negative = value < 0
@@ -269,11 +330,17 @@ local function format_integer_spec(value, format)
   local out
   if format.primary == "decimal" then
     out = format_decimal(value, format)
+  elseif format.primary == "letters" then
+    out = decimal_to_letters(value, format.case == "upper" and "A" or "a")
+  elseif format.primary == "roman" then
+    out = decimal_to_roman(value)
+    if format.case == "upper" then
+      out = out:upper()
+    end
+  elseif format.primary == "words" then
+    H.err("D3130", { value = format.primary }) -- filled in Task 3
   elseif format.primary == "sequence" then
     H.err("D3130", { value = format.token })
-  else
-    -- roman / letters / words filled in Tasks 2-3
-    H.err("D3130", { value = format.token or format.primary })
   end
   if negative then
     out = "-" .. out
@@ -287,14 +354,21 @@ local function integer_parser(format)
     return function(value)
       return parse_decimal(value, format)
     end
+  elseif format.primary == "letters" then
+    return function(value)
+      return letters_to_decimal(value, format.case == "upper" and "A" or "a")
+    end
+  elseif format.primary == "roman" then
+    return function(value)
+      return roman_to_decimal(format.case == "upper" and value or value:upper())
+    end
+  elseif format.primary == "words" then
+    return function()
+      H.err("D3130", { value = format.primary }) -- filled in Task 3
+    end
   elseif format.primary == "sequence" then
     return function()
       H.err("D3130", { value = format.token })
-    end
-  else
-    -- roman / letters / words filled in Tasks 2-3
-    return function()
-      H.err("D3130", { value = format.token or format.primary })
     end
   end
 end
