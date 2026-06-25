@@ -65,21 +65,7 @@ R.round = H.def(function(x, precision)
     return V.NOTHING
   end
   precision = (precision == nil or V.is_nothing(precision)) and 0 or math.floor(precision)
-  local factor = 10 ^ precision
-  local scaled = x * factor
-  -- correct binary-float representation error before the half-even test
-  scaled = tonumber(string.format("%.12g", scaled)) or scaled
-  local floored = math.floor(scaled)
-  local diff = scaled - floored
-  local rounded
-  if diff < 0.5 then
-    rounded = floored
-  elseif diff > 0.5 then
-    rounded = floored + 1
-  else
-    rounded = (floored % 2 == 0) and floored or floored + 1
-  end
-  return rounded / factor
+  return H.round_half_even(x, precision)
 end, 1, 2, "<n-n?:n>")
 
 R.power = H.def(function(base, exp)
@@ -104,7 +90,8 @@ R.formatBase = H.def(function(x, radix)
   if num_guard(x) then
     return V.NOTHING
   end
-  radix = (radix == nil or V.is_nothing(radix)) and 10 or math.floor(radix)
+  x = H.round_half_even(x)
+  radix = (radix == nil or V.is_nothing(radix)) and 10 or H.round_half_even(radix)
   if radix < 2 or radix > 36 then
     H.err("D3100", { value = radix, message = "$formatBase radix out of range" })
   end

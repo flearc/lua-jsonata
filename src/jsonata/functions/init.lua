@@ -7,6 +7,7 @@ local categories = {
   require("jsonata.functions.boolean"),
   require("jsonata.functions.string"),
   require("jsonata.functions.numeric"),
+  require("jsonata.functions.formatnumber"),
   require("jsonata.functions.aggregation"),
   require("jsonata.functions.array"),
   require("jsonata.functions.object"),

@@ -109,6 +109,45 @@ function H.err(code, info)
   errors.raise(code, info or {})
 end
 
+-- Half-to-even (banker's) rounding with optional decimal precision. Faithful
+-- port of jsonata's round() (jsonata.js:2658): shift the decimal place via a
+-- STRING (never multiply by 10^p, which injects float error and used to drop
+-- significant digits), round half-up to nearest integer, then correct exact
+-- ties to even. Shared by $round, $formatBase, $formatNumber.
+local function shift_decimal(x, by)
+  -- mimic JS: x.toString().split('e'); +(mantissa + 'e' + (exp + by))
+  local s = tostring(x)
+  local mant, exp = s:match("^([^eE]+)[eE]([%+%-]?%d+)$")
+  if mant then
+    return tonumber(mant .. "e" .. (tonumber(exp) + by))
+  end
+  return tonumber(s .. "e" .. by)
+end
+
+function H.round_half_even(x, precision)
+  precision = precision or 0
+  local arg = x
+  if precision ~= 0 then
+    arg = shift_decimal(arg, precision)
+  end
+  -- Math.round: round half toward +infinity (frac-based so large integers,
+  -- where x + 0.5 is unrepresentable, are returned exactly).
+  local f = math.floor(arg)
+  local result = (arg - f < 0.5) and f or (f + 1)
+  -- ties-to-even: if we rounded exactly 0.5 the wrong way, step to even
+  local diff = result - arg
+  if math.abs(diff) == 0.5 and math.abs(result % 2) == 1 then
+    result = result - 1
+  end
+  if precision ~= 0 then
+    result = shift_decimal(result, -precision)
+  end
+  if result == 0 then -- normalize -0.0 to 0
+    result = 0
+  end
+  return result
+end
+
 -- Structural equality over internal values (numbers/strings/booleans exact;
 -- arrays elementwise; objects key-set + recursive; null/nothing by identity).
 function H.deep_equal(a, b)
