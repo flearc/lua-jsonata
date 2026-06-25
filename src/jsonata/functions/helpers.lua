@@ -109,6 +109,33 @@ function H.err(code, info)
   errors.raise(code, info or {})
 end
 
+-- Half-to-even (banker's) rounding with optional decimal precision. Shared by
+-- $round, $formatBase, $formatNumber. (jsonata's `round`.)
+function H.round_half_even(x, precision)
+  precision = precision or 0
+  local factor = 10 ^ precision
+  local scaled = x * factor
+  -- Correct binary-float representation error before the half-even test.
+  -- %.12g snaps values like 452.5000000000001 -> 452.5 (12 sig-fig round),
+  -- which is what jsonata-js does implicitly via IEEE-754 string coercion.
+  -- Guard: only apply when |scaled| < 1e13 so we don't truncate large integers
+  -- (e.g. 5890840712243076 has 16 digits and needs no correction — diff is 0).
+  if math.abs(scaled) < 1e13 then
+    scaled = tonumber(string.format("%.12g", scaled)) or scaled
+  end
+  local floored = math.floor(scaled)
+  local diff = scaled - floored
+  local rounded
+  if diff < 0.5 then
+    rounded = floored
+  elseif diff > 0.5 then
+    rounded = floored + 1
+  else
+    rounded = (floored % 2 == 0) and floored or floored + 1
+  end
+  return rounded / factor
+end
+
 -- Structural equality over internal values (numbers/strings/booleans exact;
 -- arrays elementwise; objects key-set + recursive; null/nothing by identity).
 function H.deep_equal(a, b)
