@@ -323,6 +323,165 @@ local function letters_to_decimal(letters, aChar)
   return decimal
 end
 
+-- ---- words (jsonata numberToWords / wordsToNumber) ------------------------
+local FEW = {
+  [0] = "Zero",
+  [1] = "One",
+  [2] = "Two",
+  [3] = "Three",
+  [4] = "Four",
+  [5] = "Five",
+  [6] = "Six",
+  [7] = "Seven",
+  [8] = "Eight",
+  [9] = "Nine",
+  [10] = "Ten",
+  [11] = "Eleven",
+  [12] = "Twelve",
+  [13] = "Thirteen",
+  [14] = "Fourteen",
+  [15] = "Fifteen",
+  [16] = "Sixteen",
+  [17] = "Seventeen",
+  [18] = "Eighteen",
+  [19] = "Nineteen",
+}
+local ORDINALS = {
+  [0] = "Zeroth",
+  [1] = "First",
+  [2] = "Second",
+  [3] = "Third",
+  [4] = "Fourth",
+  [5] = "Fifth",
+  [6] = "Sixth",
+  [7] = "Seventh",
+  [8] = "Eighth",
+  [9] = "Ninth",
+  [10] = "Tenth",
+  [11] = "Eleventh",
+  [12] = "Twelfth",
+  [13] = "Thirteenth",
+  [14] = "Fourteenth",
+  [15] = "Fifteenth",
+  [16] = "Sixteenth",
+  [17] = "Seventeenth",
+  [18] = "Eighteenth",
+  [19] = "Nineteenth",
+}
+local DECADES = {
+  [0] = "Twenty",
+  [1] = "Thirty",
+  [2] = "Forty",
+  [3] = "Fifty",
+  [4] = "Sixty",
+  [5] = "Seventy",
+  [6] = "Eighty",
+  [7] = "Ninety",
+  [8] = "Hundred",
+}
+local MAGNITUDES = { [0] = "Thousand", [1] = "Million", [2] = "Billion", [3] = "Trillion" }
+local MAGNITUDES_LEN = 4
+
+local function number_to_words(value, ordinal)
+  local function lookup(num, prev, ord)
+    local words = ""
+    if num <= 19 then
+      words = (prev and " and " or "") .. (ord and ORDINALS[num] or FEW[num])
+    elseif num < 100 then
+      local tens = math.floor(num / 10)
+      local remainder = num % 10
+      words = (prev and " and " or "") .. DECADES[tens - 2]
+      if remainder > 0 then
+        words = words .. "-" .. lookup(remainder, false, ord)
+      elseif ord then
+        words = words:sub(1, #words - 1) .. "ieth"
+      end
+    elseif num < 1000 then
+      local hundreds = math.floor(num / 100)
+      local remainder = num % 100
+      words = (prev and ", " or "") .. FEW[hundreds] .. " Hundred"
+      if remainder > 0 then
+        words = words .. lookup(remainder, true, ord)
+      elseif ord then
+        words = words .. "th"
+      end
+    else
+      local mag = math.floor(math.log10(num) / 3)
+      if mag > MAGNITUDES_LEN then
+        mag = MAGNITUDES_LEN
+      end
+      local factor = 10 ^ (mag * 3)
+      local mant = math.floor(num / factor)
+      local remainder = num - mant * factor
+      words = (prev and ", " or "") .. lookup(mant, false, false) .. " " .. MAGNITUDES[mag - 1]
+      if remainder > 0 then
+        words = words .. lookup(remainder, true, ord)
+      elseif ord then
+        words = words .. "th"
+      end
+    end
+    return words
+  end
+  return lookup(value, false, ordinal)
+end
+
+-- wordValues lookup table (built once)
+local WORD_VALUES = {}
+for i = 0, 19 do
+  WORD_VALUES[FEW[i]:lower()] = i
+end
+for i = 0, 19 do
+  WORD_VALUES[ORDINALS[i]:lower()] = i
+end
+for i = 0, 8 do
+  local lword = DECADES[i]:lower()
+  WORD_VALUES[lword] = (i + 2) * 10
+  WORD_VALUES[lword:sub(1, #lword - 1) .. "ieth"] = WORD_VALUES[lword]
+end
+WORD_VALUES["hundredth"] = 100
+for i = 0, 3 do
+  local lword = MAGNITUDES[i]:lower()
+  local val = 10 ^ ((i + 1) * 3)
+  WORD_VALUES[lword] = val
+  WORD_VALUES[lword .. "th"] = val
+end
+
+-- split mimicking jsonata's  /,\s|\sand\s|[\s\\-]/
+local function split_words(text)
+  text = text:gsub(",%s", "\1"):gsub("%sand%s", "\1"):gsub("[%s\\%-]", "\1")
+  local parts = {}
+  for p in (text .. "\1"):gmatch("(.-)\1") do
+    parts[#parts + 1] = p
+  end
+  return parts
+end
+
+local function words_to_number(text)
+  local parts = split_words(text)
+  local segs = { 0 }
+  for _, part in ipairs(parts) do
+    local value = WORD_VALUES[part]
+    if value < 100 then
+      local top = table.remove(segs)
+      if top >= 1000 then
+        segs[#segs + 1] = top
+        top = 0
+      end
+      segs[#segs + 1] = top + value
+    else
+      -- pop first (Lua evaluates the LHS index before the RHS, so use a local
+      -- to mirror JS's segs.push(segs.pop() * value) ordering)
+      local popped = table.remove(segs)
+      segs[#segs + 1] = popped * value
+    end
+  end
+  local result = 0
+  for _, s in ipairs(segs) do
+    result = result + s
+  end
+  return result
+end
+
 -- ---- format dispatch (jsonata _formatInteger) -----------------------------
 local function format_integer_spec(value, format)
   local negative = value < 0
@@ -338,7 +497,13 @@ local function format_integer_spec(value, format)
       out = out:upper()
     end
   elseif format.primary == "words" then
-    H.err("D3130", { value = format.primary }) -- filled in Task 3
+    out = number_to_words(value, format.ordinal)
+    if format.case == "upper" then
+      out = out:upper()
+    elseif format.case == "lower" then
+      out = out:lower()
+    end
+    -- "title" leaves the table's natural Title-case
   elseif format.primary == "sequence" then
     H.err("D3130", { value = format.token })
   end
@@ -363,8 +528,8 @@ local function integer_parser(format)
       return roman_to_decimal(format.case == "upper" and value or value:upper())
     end
   elseif format.primary == "words" then
-    return function()
-      H.err("D3130", { value = format.primary }) -- filled in Task 3
+    return function(value)
+      return words_to_number(value:lower())
     end
   elseif format.primary == "sequence" then
     return function()
