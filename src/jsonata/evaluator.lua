@@ -604,6 +604,9 @@ local function path_is_tuple(node)
     if s.tuple then
       return true
     end
+    if s.steps and path_is_tuple(s) then
+      return true
+    end
   end
   return false
 end
@@ -617,7 +620,15 @@ local function eval_path_tuple(node, input, env, want_tuples)
   local tuples
   local start = 1
   if step_is_self_contained(steps) then
-    local var_val = evaluate(steps[1], input, env)
+    -- a self-contained step-1 that is itself a tuple sub-path (e.g. a focus step
+    -- the parser nested under a sort) must yield its tuple stream so its bindings
+    -- survive — mirroring the per-step nested handling in the main loop below.
+    local var_val
+    if path_is_tuple(steps[1]) then
+      var_val = eval_path_tuple(steps[1], input, env, true)
+    else
+      var_val = evaluate(steps[1], input, env)
+    end
     if V.is_sequence(var_val) and V.get_flag(var_val, "tuple_stream") then
       tuples = {}
       for i = 1, #var_val do
@@ -865,14 +876,7 @@ local function _evaluate(node, input, env)
     return V.obj_get(input, node.value)
   elseif t == "path" then
     local keep = path_keeps_array(node)
-    local tuple_mode = false
-    for _, s in ipairs(node.steps) do
-      if s.tuple then
-        tuple_mode = true
-        break
-      end
-    end
-    if tuple_mode then
+    if path_is_tuple(node) then
       local seq = eval_path_tuple(node, input, env)
       if node.tuple then
         return seq -- tuple stream for an enclosing tuple step; no unwrap

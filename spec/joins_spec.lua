@@ -199,3 +199,38 @@ describe("M6d: tuple-stream group-by (the reduce half)", function()
     assert.are.equal("D1009", err.code)
   end)
 end)
+
+describe("M6e: nested tuple-stream detection (focus under sort/predicate)", function()
+  local EMP = dataset("employees")
+
+  -- ^(sort) nests the focus step into a sub-path; predicate nests Contact@$c.
+  -- The path's tuple steps are all nested, so detection must recurse.
+  it("sort-on-focus-step join: ^($e.Surname) (employee-map-reduce case7)", function()
+    assert.are.same({
+      { name = "Cruse", phone = { "3146458343", "315 782 9279" } },
+      { name = "Jones", phone = "0280 564 6543" },
+      { name = "Jones", phone = "0280 864 8643" },
+      { name = "Jones", phone = "07735 853535" },
+      { name = "Smith", phone = { "0203 544 1234", "01962 001234", "077 7700 1234" } },
+    }, run("Employee@$e^($e.Surname).Contact@$c[$e.SSN=$c.ssn].{ 'name': $e.Surname, 'phone': $c.Phone.number }", EMP))
+  end)
+
+  it("sort-on-focus-step join: ^($e.FirstName) (employee-map-reduce case8)", function()
+    assert.are.same({
+      { name = "Cruse", phone = { "3146458343", "315 782 9279" } },
+      { name = "Smith", phone = { "0203 544 1234", "01962 001234", "077 7700 1234" } },
+      { name = "Jones", phone = "0280 564 6543" },
+      { name = "Jones", phone = "0280 864 8643" },
+      { name = "Jones", phone = "07735 853535" },
+    }, run("Employee@$e^($e.FirstName).Contact@$c[$e.SSN=$c.ssn].{ 'name': $e.Surname, 'phone': $c.Phone.number }", EMP))
+  end)
+
+  it("index then sort then map carries $o (sorting case020)", function()
+    assert.are.same({
+      { Product = "Cloak", ["Order Index"] = 1 },
+      { Product = "Trilby hat", ["Order Index"] = 0 },
+      { Product = "Bowler Hat", ["Order Index"] = 0 },
+      { Product = "Bowler Hat", ["Order Index"] = 1 },
+    }, run("Account.Order#$o.Product^(ProductID).{ 'Product': `Product Name`, 'Order Index': $o }", dataset("dataset5")))
+  end)
+end)
