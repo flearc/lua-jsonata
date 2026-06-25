@@ -145,4 +145,13 @@ describe("M8b: words parse", function()
     assert.are.equal(733, run("$parseInteger('Seven Hundred and Thirty-Third', 'Ww;o')"))
     assert.are.equal(1000000000001, run("$parseInteger('one trillion and first', 'w;o')"))
   end)
+
+  it("unrecognized words token -> NaN (not a crash), matching oracle", function()
+    local r = run("$parseInteger('foo', 'w')")
+    assert.is_true(type(r) == "number" and r ~= r) -- NaN
+    local r2 = run("$parseInteger('-twelve', 'w')")
+    assert.is_true(type(r2) == "number" and r2 ~= r2)
+    -- valid input still works
+    assert.are.equal(34, run("$parseInteger('thirty-four', 'w')"))
+  end)
 end)

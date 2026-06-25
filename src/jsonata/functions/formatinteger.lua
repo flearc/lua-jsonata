@@ -461,7 +461,7 @@ local function words_to_number(text)
   local segs = { 0 }
   for _, part in ipairs(parts) do
     local value = WORD_VALUES[part]
-    if value < 100 then
+    if value ~= nil and value < 100 then
       local top = table.remove(segs)
       if top >= 1000 then
         segs[#segs + 1] = top
@@ -471,8 +471,9 @@ local function words_to_number(text)
     else
       -- pop first (Lua evaluates the LHS index before the RHS, so use a local
       -- to mirror JS's segs.push(segs.pop() * value) ordering)
+      -- nil value (unknown token) mirrors JS undefined: * undefined -> NaN
       local popped = table.remove(segs)
-      segs[#segs + 1] = popped * value
+      segs[#segs + 1] = popped * (value or (0 / 0))
     end
   end
   local result = 0
