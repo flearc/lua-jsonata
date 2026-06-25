@@ -370,24 +370,64 @@ local function deep_clone(v)
   return v
 end
 
+-- jsonata fn.append: undefined-aware concatenation; arrays spread one level,
+-- scalars push as one. append_flat already flattens non-`cons` arrays and
+-- skips NOTHING, matching fn.append's spread.
+local function tuple_append(a, b)
+  if V.is_nothing(a) then
+    return b
+  end
+  if V.is_nothing(b) then
+    return a
+  end
+  local seq = V.sequence()
+  append_flat(seq, a)
+  append_flat(seq, b)
+  return seq
+end
+
+-- jsonata reduceTupleStream: merge a group of tuples into one, appending each
+-- binding so $c/$e become the sequence of every member's value (a 1-member
+-- group keeps the scalar). The merged "@" is the value expression's context.
+local function reduce_tuple_stream(tuples)
+  local merged = {}
+  for k, v in pairs(tuples[1]) do
+    merged[k] = v
+  end
+  for ti = 2, #tuples do
+    for k, v in pairs(tuples[ti]) do
+      merged[k] = tuple_append(merged[k], v)
+    end
+  end
+  return merged
+end
+
 -- Group a context sequence by each pair's key expression, then evaluate each
 -- pair's value over its grouped data (the {} group-by operator). Returns a
 -- one-element sequence holding the result object. Matches jsonata's
 -- evaluateGroupExpression: string keys only (T1003); two different pairs
 -- producing the same key -> D1009; 1-item group -> single context, multi -> array.
-local function eval_group_step(context, pairs, env)
+local function eval_group_step(context, pairs, env, tuple_mode)
   local items = {}
   for j = 1, #context do
     items[j] = context[j]
   end
-  if #items == 0 then
+  if #items == 0 and not tuple_mode then
     items[1] = V.NOTHING
   end
 
   local order, groups = {}, {}
   for _, item in ipairs(items) do
+    -- in tuple mode the key sees the per-tuple frame (so $e/$c/$i resolve),
+    -- and the grouped data holds the TUPLE; otherwise it holds the value.
+    local ctx_item, key_env
+    if tuple_mode then
+      ctx_item, key_env = item["@"], create_frame_from_tuple(env, item)
+    else
+      ctx_item, key_env = item, env
+    end
     for pi, pair in ipairs(pairs) do
-      local key = evaluate(pair[1], item, env)
+      local key = evaluate(pair[1], ctx_item, key_env)
       if not V.is_nothing(key) then
         if V.typeof(key) ~= "string" then
           errors.raise("T1003", { value = key })
@@ -409,17 +449,25 @@ local function eval_group_step(context, pairs, env)
   local result = V.object()
   for _, key in ipairs(order) do
     local g = groups[key]
-    local ctx
-    if #g.data == 1 then
-      ctx = g.data[1]
+    local value
+    if tuple_mode then
+      -- merge the grouped tuples (append each binding); value sees the merged
+      -- context (@) and bindings ($c = all members) via a per-group frame.
+      local merged = reduce_tuple_stream(g.data)
+      value = evaluate(pairs[g.exprIndex][2], merged["@"], create_frame_from_tuple(env, merged))
     else
-      local copy = {}
-      for i = 1, #g.data do
-        copy[i] = g.data[i]
+      local ctx
+      if #g.data == 1 then
+        ctx = g.data[1]
+      else
+        local copy = {}
+        for i = 1, #g.data do
+          copy[i] = g.data[i]
+        end
+        ctx = V.array(copy)
       end
-      ctx = V.array(copy)
+      value = evaluate(pairs[g.exprIndex][2], ctx, env)
     end
-    local value = evaluate(pairs[g.exprIndex][2], ctx, env)
     if not V.is_nothing(value) then
       V.obj_set(result, key, value)
     end
@@ -615,16 +663,11 @@ local function eval_path_tuple(node, input, env, want_tuples)
     if step.type == "sort" then
       tuples = eval_sort_step(tuples, step.terms, env, true)
     elseif step.type == "group" then
-      -- Ancestry does not flow into group pairs (matches jsonata's parser,
-      -- which never pushes ancestry through `{` group-by); consume values.
-      -- NB: the `{k:v}` OBJECT constructor is type "object" (not "group") and
-      -- reaches the else branch below, where the per-tuple frame keeps
-      -- ancestry live.
-      local values = V.sequence()
-      for j = 1, #tuples do
-        values[#values + 1] = tuples[j]["@"]
-      end
-      tuples = values_to_tuples(eval_group_step(values, step.pairs, env))
+      -- jsonata propagates the tuple bindings ($e/$c/$i) into a `{` group-by
+      -- (reduceTupleStream): pass the tuples through, not collapsed @-values.
+      -- (A `%` written INSIDE a group pair is still orphaned by the parser —
+      -- unaffected here.)
+      tuples = values_to_tuples(eval_group_step(tuples, step.pairs, env, true))
     else
       local next_tuples = {}
       for j = 1, #tuples do
