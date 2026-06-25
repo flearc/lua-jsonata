@@ -86,3 +86,27 @@ describe("M7b: H.serialize skips function-valued object keys", function()
     assert.is_truthy(s:find('"match":"bb"'))
   end)
 end)
+
+describe("M7b: $match", function()
+  it("returns an array of {match,index,groups}", function()
+    assert.are.same({
+      { match = "ab", index = 0, groups = { "b" } },
+      { match = "abb", index = 2, groups = { "bb" } },
+      { match = "abbbb", index = 5, groups = { "bbbb" } },
+    }, run('$match("ababbabbbb", /a(b+)/)'))
+  end)
+  it("limit 1 singleton-unwraps to a single object", function()
+    assert.are.same({ match = "ab", index = 0, groups = { "b" } }, run('$match("ababbabbbb", /a(b+)/, 1)'))
+  end)
+  it("maps over the array of matches", function()
+    assert.are.same({ "ab", "abb", "abbbb" }, run('$match("ababbabbbb", /a(b+)/).match'))
+  end)
+  it("no match returns undefined", function()
+    assert.is_nil(run('$match("xyz", /q+/)'))
+  end)
+  it("negative limit raises D3040", function()
+    local ok, err = pcall(run, '$match("hello", /l/, -1)')
+    assert.is_false(ok)
+    assert.are.equal("D3040", err.code)
+  end)
+end)

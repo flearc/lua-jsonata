@@ -228,6 +228,36 @@ R.split = H.def(function(s, sep, limit)
   return result
 end, 2, 3, "<s-(sf)n?:a<s>>")
 
+R.match = H.def(function(s, regex, limit)
+  if not require_string(s, "match", 1) then
+    return V.NOTHING
+  end
+  if not (limit == nil or V.is_nothing(limit)) and limit < 0 then
+    H.err("D3040", { name = "match", position = 3, value = limit })
+  end
+  local result = V.array({})
+  if limit == nil or V.is_nothing(limit) or limit > 0 then
+    local count = 0
+    local m = H.apply(regex, { s })
+    while not V.is_nothing(m) and (limit == nil or V.is_nothing(limit) or count < limit) do
+      local obj = V.object()
+      V.obj_set(obj, "match", V.obj_get(m, "match"))
+      V.obj_set(obj, "index", V.obj_get(m, "start"))
+      V.obj_set(obj, "groups", V.obj_get(m, "groups"))
+      result[#result + 1] = obj
+      m = H.apply(V.obj_get(m, "next"), {})
+      count = count + 1
+    end
+  end
+  -- jsonata returns a sequence: 0 -> undefined, 1 -> the bare object, N -> array
+  if #result == 0 then
+    return V.NOTHING
+  elseif #result == 1 then
+    return result[1]
+  end
+  return result
+end, 2, 3, "<s-f<s:o>n?:a<o>>")
+
 R.join = H.def(function(arr, sep)
   if nothing_guard(arr) then
     return V.NOTHING
