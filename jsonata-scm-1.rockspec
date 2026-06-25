@@ -11,6 +11,7 @@ description = {
 }
 dependencies = {
   "lua >= 5.1",
+  "lrexlib-pcre2",
 }
 test_dependencies = {
   "busted",

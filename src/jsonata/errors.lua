@@ -14,6 +14,7 @@ local MESSAGES = {
   S0217 = "The object representing the 'parent' cannot be derived from this expression",
   S0301 = "Empty regular expressions are not allowed",
   S0302 = "No terminating / in regular expression",
+  S0303 = "Invalid regular expression: {{value}}",
   S0401 = "Type parameters can only be applied to functions and arrays",
   S0402 = "Choice groups containing parameterized types are not supported",
   -- Type errors
