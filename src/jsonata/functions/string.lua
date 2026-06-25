@@ -296,7 +296,9 @@ local function string_replacer(replacement)
         if idx then
           if ngroups > 0 then
             local sub = groups[idx]
-            if sub ~= nil and not V.is_nothing(sub) then
+            -- only an actual string capture is substituted; a non-participating
+            -- group (null) yields empty, matching jsonata's $N behaviour
+            if type(sub) == "string" then
               out[#out + 1] = sub
             end
           end
