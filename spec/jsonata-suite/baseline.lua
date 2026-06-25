@@ -1073,6 +1073,7 @@ return {
   ["regex/case013"] = true,
   ["regex/case014"] = true,
   ["regex/case015"] = true,
+  ["regex/case016"] = true,
   ["regex/case017"] = true,
   ["regex/case018"] = true,
   ["regex/case019"] = true,
