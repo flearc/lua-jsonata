@@ -234,3 +234,27 @@ describe("M6e: nested tuple-stream detection (focus under sort/predicate)", func
     }, run("Account.Order#$o.Product^(ProductID).{ 'Product': `Product Name`, 'Order Index': $o }", dataset("dataset5")))
   end)
 end)
+
+describe("M6f: ordered stages on root/sort tuple steps", function()
+  local NUMS = { 3, 1, 4, 1, 5, 9 }
+
+  it("filter before #: $[[1..4]]#$pos[$pos>=2] re-indexes the survivors", function()
+    assert.are.same({ 1, 5 }, run("$[[1..4]]#$pos[$pos>=2]", NUMS))
+  end)
+
+  it("sort before #: $^($)#$pos[$pos<3] indexes the sorted sequence", function()
+    assert.are.same({ 1, 1, 3 }, run("$^($)#$pos[$pos<3]", NUMS))
+  end)
+
+  it("intermediate: $[[1..4]]#$pos collapses to the filtered values", function()
+    assert.are.same({ 1, 4, 1, 5 }, run("$[[1..4]]#$pos", NUMS))
+  end)
+
+  it("intermediate: $^($)#$pos collapses to the sorted values", function()
+    assert.are.same({ 1, 1, 3, 4, 5, 9 }, run("$^($)#$pos", NUMS))
+  end)
+
+  it("regression: natural-order $#$pos[$pos<3] still keeps the first three", function()
+    assert.are.same({ 3, 1, 4 }, run("$#$pos[$pos<3]", NUMS))
+  end)
+end)

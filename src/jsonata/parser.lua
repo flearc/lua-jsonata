@@ -687,15 +687,29 @@ local function mark_binding(step, node)
     step = step.steps[#step.steps]
   end
   if node.value == "@" then
-    if step.predicate ~= nil or step.keepArray then
+    if step.predicate ~= nil or step.stages ~= nil or step.keepArray then
       errors.raise("S0215", { position = node.position, token = "@" })
     end
     if step.type == "sort" then
       errors.raise("S0216", { position = node.position, token = "@" })
     end
     step.focus = node.rhs.value
-  else
-    step.index = node.rhs.value
+  else -- "#"
+    if step.stages then
+      step.stages[#step.stages + 1] = { type = "index", value = node.rhs.value }
+    elseif step.predicate then
+      -- a filter preceded this index: re-express the step's filters plus this
+      -- index as an ordered stages list so the index numbers the post-filter
+      -- survivors (jsonata processAST '#': move predicate -> stages, push index)
+      step.stages = {}
+      for _, f in ipairs(step.predicate) do
+        step.stages[#step.stages + 1] = { type = "filter", expr = f }
+      end
+      step.predicate = nil
+      step.stages[#step.stages + 1] = { type = "index", value = node.rhs.value }
+    else
+      step.index = node.rhs.value
+    end
   end
   step.tuple = true
 end

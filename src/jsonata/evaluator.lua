@@ -292,6 +292,21 @@ local function apply_predicates(seq, predicates, env, tuple_mode)
   return current
 end
 
+-- Apply an ordered stages list (jsonata evaluateStages) to a tuple stream:
+-- a filter runs the predicate; an index renumbers ALL surviving tuples 0-based.
+local function apply_stages(tuples, stages, env)
+  for _, stage in ipairs(stages) do
+    if stage.type == "filter" then
+      tuples = apply_predicates(tuples, { stage.expr }, env, true)
+    else -- "index"
+      for j = 1, #tuples do
+        tuples[j][stage.value] = j - 1
+      end
+    end
+  end
+  return tuples
+end
+
 -- Reorder a whole context sequence by one or more sort terms (the ^ operator).
 -- comp_after(a, b) is true when a should sort AFTER b, matching jsonata's
 -- evaluateSortExpression: per term, evaluate the key in each element's context;
@@ -659,6 +674,9 @@ local function eval_path_tuple(node, input, env, want_tuples)
         tuples[j][steps[1].focus] = tuples[j]["@"]
       end
     end
+    if steps[1].stages then
+      tuples = apply_stages(tuples, steps[1].stages, env)
+    end
     if steps[1].predicate then
       tuples = apply_predicates(tuples, steps[1].predicate, env, true)
     end
@@ -673,6 +691,11 @@ local function eval_path_tuple(node, input, env, want_tuples)
     local step = steps[i]
     if step.type == "sort" then
       tuples = eval_sort_step(tuples, step.terms, env, true)
+      if step.index then
+        for j = 1, #tuples do
+          tuples[j][step.index] = j - 1
+        end
+      end
     elseif step.type == "group" then
       -- jsonata propagates the tuple bindings ($e/$c/$i) into a `{` group-by
       -- (reduceTupleStream): pass the tuples through, not collapsed @-values.
@@ -731,7 +754,9 @@ local function eval_path_tuple(node, input, env, want_tuples)
       end
       tuples = next_tuples
     end
-    if step.predicate then
+    if step.stages then
+      tuples = apply_stages(tuples, step.stages, env)
+    elseif step.predicate then
       tuples = apply_predicates(tuples, step.predicate, env, true)
     end
   end
