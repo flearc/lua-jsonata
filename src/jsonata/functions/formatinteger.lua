@@ -189,7 +189,7 @@ end
 -- ---- decimal format (jsonata _formatInteger DECIMAL branch) ---------------
 local function format_decimal(value, format)
   -- value is a non-negative integer here (sign handled by caller)
-  local digits = H.utf8_chars(tostring(value)) -- ASCII digits
+  local digits = H.utf8_chars(H.num_to_str(value)) -- ASCII digits
   -- left-pad with '0' to mandatoryDigits
   local padLength = format.mandatoryDigits - #digits
   if padLength > 0 then
