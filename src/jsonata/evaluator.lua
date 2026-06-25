@@ -691,9 +691,25 @@ local function eval_path_tuple(node, input, env, want_tuples)
     local step = steps[i]
     if step.type == "sort" then
       tuples = eval_sort_step(tuples, step.terms, env, true)
+      -- jsonata binds a sort step's index ONLY when sorting a raw (not yet
+      -- tuple-bound) stream — its evaluateTupleStep sort case binds expr.index
+      -- in the `tupleBindings === undefined` branch only. If a prior step
+      -- already bound a focus/index (any tuple key beyond "@"), the index is
+      -- not bound, so e.g. `$#$a^($)#$b[$b<2]` yields undefined, not [1,1].
       if step.index then
-        for j = 1, #tuples do
-          tuples[j][step.index] = j - 1
+        local raw = true
+        if tuples[1] then
+          for k in pairs(tuples[1]) do
+            if k ~= "@" then
+              raw = false
+              break
+            end
+          end
+        end
+        if raw then
+          for j = 1, #tuples do
+            tuples[j][step.index] = j - 1
+          end
         end
       end
     elseif step.type == "group" then
