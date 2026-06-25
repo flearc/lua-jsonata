@@ -1,5 +1,7 @@
 -- Lazy PCRE2 adapter. require("rex_pcre2") happens on first compile, so
 -- non-regex programs never load it.
+local V = require("jsonata.value")
+
 local M = {}
 
 local rex -- cached module
@@ -39,6 +41,15 @@ function M.first(matcher, str, from)
     return nil
   end
   local matched = (en < st) and "" or str:sub(st, en)
+  -- lrexlib yields `false` for a non-participating optional group; jsonata
+  -- represents it as null (serialized as `null`, skipped in $N substitution).
+  if caps then
+    for i = 1, #caps do
+      if caps[i] == false then
+        caps[i] = V.NULL
+      end
+    end
+  end
   return {
     match = matched,
     start = st - 1,

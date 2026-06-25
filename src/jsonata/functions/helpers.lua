@@ -3,6 +3,19 @@ local errors = require("jsonata.errors")
 
 local H = {}
 
+-- Lazily reach the evaluator's apply (avoids a load-time require cycle:
+-- evaluator -> functions -> helpers -> evaluator). Memoized, so cheap.
+local eval
+function H.apply(proc, args, context)
+  eval = eval or require("jsonata.evaluator")
+  return eval.apply(proc, args, context)
+end
+
+-- A regex literal evaluates to a callable function value tagged `regex = true`.
+function H.is_regex(x)
+  return type(x) == "table" and x._jsonata_function and x.regex or false
+end
+
 -- def(impl)            -> any number of args
 -- def(impl, n)         -> exactly n          (max defaults to min)
 -- def(impl, min, max)  -> between min and max (inclusive)
@@ -171,7 +184,11 @@ function H.serialize(x)
   elseif t == "object" then
     local parts = {}
     for _, k in ipairs(V.obj_keys(x)) do
-      parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(V.obj_get(x, k))
+      local val = V.obj_get(x, k)
+      local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
+      if not is_fn and not V.is_nothing(val) then
+        parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(val)
+      end
     end
     return "{" .. table.concat(parts, ",") .. "}"
   end
