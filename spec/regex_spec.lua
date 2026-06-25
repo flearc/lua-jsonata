@@ -75,3 +75,14 @@ describe("M7a: $contains / $split with regex", function()
     assert.are.same({ "Hello", "World" }, run('$split("Hello World", " ")'))
   end)
 end)
+
+describe("M7b: H.serialize skips function-valued object keys", function()
+  it("$string of a raw match object omits the next field (valid JSON)", function()
+    -- a regex value applied to a string returns {match,start,end,groups,next};
+    -- $string must NOT emit "next": (a function) -> invalid JSON
+    local s = run('$string(($m := /b+/; $m("abbc")))')
+    assert.is_string(s)
+    assert.is_nil(s:find('"next"'))
+    assert.is_truthy(s:find('"match":"bb"'))
+  end)
+end)

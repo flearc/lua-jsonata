@@ -5,15 +5,6 @@ local sort = require("jsonata.sort")
 
 local R = {}
 
--- Lazily reach the evaluator's apply. Avoids a load-time require cycle:
--- evaluator -> functions -> higher_order -> evaluator. By the time any HOF
--- runs, evaluator.apply is defined; require is memoized so this is cheap.
-local eval
-local function apply(proc, args, context)
-  eval = eval or require("jsonata.evaluator")
-  return eval.apply(proc, args, context)
-end
-
 -- Arity a callback declares: lambda -> #params; builtin -> stored arity (= min).
 local function arity_of(proc)
   if type(proc) ~= "table" then
@@ -60,7 +51,7 @@ R.map = H.def(function(arr, fn)
   arr = to_array(arr)
   local seq = V.sequence()
   for i = 1, #arr do
-    local res = apply(fn, hof_args(fn, arr[i], i - 1, arr))
+    local res = H.apply(fn, hof_args(fn, arr[i], i - 1, arr))
     if not V.is_nothing(res) then
       seq[#seq + 1] = res
     end
@@ -76,7 +67,7 @@ R.filter = H.def(function(arr, fn)
   arr = to_array(arr)
   local seq = V.sequence()
   for i = 1, #arr do
-    if H.truthy(apply(fn, hof_args(fn, arr[i], i - 1, arr))) then
+    if H.truthy(H.apply(fn, hof_args(fn, arr[i], i - 1, arr))) then
       seq[#seq + 1] = arr[i]
     end
   end
@@ -113,7 +104,7 @@ R.reduce = H.def(function(arr, fn, init)
     if a >= 4 then
       args[4] = arr
     end
-    acc = apply(fn, args)
+    acc = H.apply(fn, args)
   end
   return acc
 end, 2, 3)
@@ -130,7 +121,7 @@ R.single = H.def(function(arr, fn)
   for i = 1, #arr do
     local positive = true
     if fn ~= nil then
-      positive = H.truthy(apply(fn, hof_args(fn, arr[i], i - 1, arr)))
+      positive = H.truthy(H.apply(fn, hof_args(fn, arr[i], i - 1, arr)))
     end
     if positive then
       if not found then
@@ -156,7 +147,7 @@ R.sift = H.def(function(obj, fn)
   local result = V.object()
   for _, k in ipairs(V.obj_keys(obj)) do
     local v = V.obj_get(obj, k)
-    if H.truthy(apply(fn, hof_args(fn, v, k, obj))) then
+    if H.truthy(H.apply(fn, hof_args(fn, v, k, obj))) then
       V.obj_set(result, k, v)
     end
   end
@@ -174,7 +165,7 @@ R.each = H.def(function(obj, fn)
   local seq = V.sequence()
   for _, k in ipairs(V.obj_keys(obj)) do
     local v = V.obj_get(obj, k)
-    local res = apply(fn, hof_args(fn, v, k, obj))
+    local res = H.apply(fn, hof_args(fn, v, k, obj))
     if not V.is_nothing(res) then
       seq[#seq + 1] = res
     end
@@ -206,7 +197,7 @@ R.sort = H.def(function(arr, comparator)
   local comp_after
   if comparator ~= nil then
     comp_after = function(a, b)
-      return H.truthy(apply(comparator, { a, b }))
+      return H.truthy(H.apply(comparator, { a, b }))
     end
   else
     if not (all_of_type(arr, "number") or all_of_type(arr, "string")) then

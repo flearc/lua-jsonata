@@ -3,19 +3,6 @@ local H = require("jsonata.functions.helpers")
 
 local R = {}
 
--- Lazily reach the evaluator's apply (same pattern as higher_order.lua) to
--- avoid a load-time require cycle. Used to run a regex value against a string.
-local eval
-local function apply(proc, args)
-  eval = eval or require("jsonata.evaluator")
-  return eval.apply(proc, args)
-end
-
--- A regex literal evaluates to a callable function value tagged `regex = true`.
-local function is_regex(x)
-  return type(x) == "table" and x._jsonata_function and x.regex
-end
-
 -- M1 scalar $string (container serialization added in Task 7).
 local function to_string(x)
   if V.is_nothing(x) then
@@ -172,8 +159,8 @@ R.contains = H.def(function(s, sub)
   if not require_string(s, "contains", 1) then
     return V.NOTHING
   end
-  if is_regex(sub) then
-    return not V.is_nothing(apply(sub, { s }))
+  if H.is_regex(sub) then
+    return not V.is_nothing(H.apply(sub, { s }))
   end
   require_string(sub, "contains", 2)
   return string.find(s, sub, 1, true) ~= nil
@@ -194,10 +181,10 @@ R.split = H.def(function(s, sep, limit)
     end
   end
   local result = V.array({})
-  if is_regex(sep) then
+  if H.is_regex(sep) then
     local pos = 0 -- 0-based char index into s
     while true do
-      local m = apply(sep, { string.sub(s, pos + 1) })
+      local m = H.apply(sep, { string.sub(s, pos + 1) })
       if V.is_nothing(m) then
         break
       end

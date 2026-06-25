@@ -54,6 +54,11 @@ local MESSAGES = {
   D3141 = "$assert() statement failed",
   D3120 = "Syntax error in expression passed to function eval: {{value}}",
   D3121 = "Dynamic error evaluating the expression passed to function eval: {{value}}",
+  D3010 = "Second argument of replace function cannot be an empty string",
+  D3011 = "Fourth argument of replace function must evaluate to a positive number",
+  D3012 = "Attempted to replace a matched string with a non-string value",
+  D3040 = "Third argument of match function must evaluate to a positive number",
+  T1010 = "The matcher function argument passed to function {{token}} does not return the correct object structure",
 }
 
 function M.is_error(x)
