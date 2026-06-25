@@ -33,6 +33,8 @@ local function make_parser(source)
       type = t.type,
       value = t.value,
       position = t.position,
+      source = t.source,
+      flags = t.flags,
     }
     if t.type == "operator" or t.type == "keyword" then
       local sym = symbols[t.value]
@@ -59,7 +61,7 @@ local function make_parser(source)
     local t = self.node
     self.advance()
     if t.nud == nil then
-      if t.type == "number" or t.type == "string" or t.type == "name" or t.type == "variable" then
+      if t.type == "number" or t.type == "string" or t.type == "name" or t.type == "variable" or t.type == "regex" then
         -- terminals build themselves below
       elseif t.type == "(end)" then
         errors.raise("S0203", { position = #source })
@@ -97,6 +99,8 @@ local function make_parser(source)
       return { type = "name", value = t.value, position = t.position }
     elseif t.type == "variable" then
       return { type = "variable", value = t.value, position = t.position }
+    elseif t.type == "regex" then
+      return { type = "regex", source = t.source, flags = t.flags, position = t.position }
     end
     errors.raise("S0201", { position = t.position, token = tostring(t.value) })
   end

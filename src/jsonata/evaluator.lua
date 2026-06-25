@@ -3,6 +3,14 @@ local errors = require("jsonata.errors")
 local functions = require("jsonata.functions")
 local sort = require("jsonata.sort")
 
+local regexlib -- lazy
+local function get_regexlib()
+  if regexlib == nil then
+    regexlib = require("jsonata.regex")
+  end
+  return regexlib
+end
+
 local M = {}
 
 -- The function-composition meta-lambda (jsonata chainAST): parsed once, evaluated
@@ -502,6 +510,7 @@ local function step_is_self_contained(steps)
     and (
       s1.type == "variable"
       or s1.type == "function"
+      or s1.type == "block"
       or s1.type == "path"
       or s1.type == "wildcard"
       or s1.type == "descendant"
@@ -1089,6 +1098,44 @@ local function _evaluate(node, input, env)
       return V.NOTHING
     end
     return v
+  elseif t == "regex" then
+    local rl = get_regexlib()
+    node._matcher = node._matcher or rl.compile(node.source, node.flags)
+    local matcher = node._matcher
+    local source = node.source
+    local function closure(str, fromIndex)
+      if type(str) ~= "string" then
+        return V.NOTHING
+      end
+      local m = rl.first(matcher, str, fromIndex or 0)
+      if m == nil then
+        return V.NOTHING
+      end
+      local obj = V.object()
+      V.obj_set(obj, "match", m.match)
+      V.obj_set(obj, "start", m.start)
+      V.obj_set(obj, "end", m["end"])
+      local groups = V.array({})
+      for i = 1, #m.groups do
+        groups[i] = m.groups[i]
+      end
+      V.obj_set(obj, "groups", groups)
+      V.obj_set(obj, "next", {
+        _jsonata_function = true,
+        impl = function()
+          if m["end"] >= #str then
+            return V.NOTHING
+          end
+          local nxt = closure(str, m["end"])
+          if not V.is_nothing(nxt) and V.obj_get(nxt, "match") == "" then
+            errors.raise("D1004", { position = 0, value = source })
+          end
+          return nxt
+        end,
+      })
+      return obj
+    end
+    return { _jsonata_function = true, regex = true, source = source, flags = node.flags, impl = closure }
   end
   errors.raise("D3001", { token = t })
 end

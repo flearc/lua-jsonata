@@ -12,6 +12,9 @@ local MESSAGES = {
   S0215 = "A context variable binding must precede any predicates on a step in a path expression",
   S0216 = "A context variable binding must precede the order-by clause on a step in a path expression",
   S0217 = "The object representing the 'parent' cannot be derived from this expression",
+  S0301 = "Empty regular expressions are not allowed",
+  S0302 = "No terminating / in regular expression",
+  S0303 = "Invalid regular expression: {{value}}",
   S0401 = "Type parameters can only be applied to functions and arrays",
   S0402 = "Choice groups containing parameterized types are not supported",
   -- Type errors
@@ -33,6 +36,7 @@ local MESSAGES = {
   T2012 = "The delete clause of the transform expression must evaluate to an array of strings",
   -- Dynamic / runtime errors
   D1001 = "Number out of range to be formatted",
+  D1004 = "Regular expression matches zero length string at position {{position}}",
   D1002 = "Cannot negate a non-numeric value: {{value}}",
   D1009 = "Multiple key definitions evaluate to same key: {{value}}",
   D2014 = "The size of the sequence allocated by the range operator (..) must not exceed 1e7.  Attempted to allocate {{value}}.",
