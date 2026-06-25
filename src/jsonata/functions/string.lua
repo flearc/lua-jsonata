@@ -258,6 +258,119 @@ R.match = H.def(function(s, regex, limit)
   return result
 end, 2, 3, "<s-f<s:o>n?:a<o>>")
 
+-- Build a per-match replacer from a STRING replacement (jsonata $-scanner):
+-- $$ -> literal $, $0 -> whole match, $N -> capture group N (maxDigits rule).
+local function string_replacer(replacement)
+  return function(m)
+    local groups = V.obj_get(m, "groups")
+    local ngroups = #groups
+    local whole = V.obj_get(m, "match")
+    local out = {}
+    local pos = 1
+    local len = #replacement
+    while pos <= len do
+      local d = string.find(replacement, "$", pos, true)
+      if not d then
+        out[#out + 1] = string.sub(replacement, pos)
+        break
+      end
+      out[#out + 1] = string.sub(replacement, pos, d - 1)
+      pos = d + 1
+      local nextch = string.sub(replacement, pos, pos)
+      if nextch == "$" then
+        out[#out + 1] = "$"
+        pos = pos + 1
+      elseif nextch == "0" then
+        out[#out + 1] = whole
+        pos = pos + 1
+      else
+        local maxDigits = (ngroups == 0) and 1 or (math.floor(math.log(ngroups) / math.log(10)) + 1)
+        local function parse_int(n)
+          local digits = string.sub(replacement, pos, pos + n - 1):match("^%d+")
+          return digits and tonumber(digits) or nil
+        end
+        local idx = parse_int(maxDigits)
+        if maxDigits > 1 and idx and idx > ngroups then
+          idx = parse_int(maxDigits - 1)
+        end
+        if idx then
+          if ngroups > 0 then
+            local sub = groups[idx]
+            if sub ~= nil and not V.is_nothing(sub) then
+              out[#out + 1] = sub
+            end
+          end
+          pos = pos + #tostring(idx)
+        else
+          out[#out + 1] = "$"
+        end
+      end
+    end
+    return table.concat(out)
+  end
+end
+
+R.replace = H.def(function(s, pattern, replacement, limit)
+  if V.is_nothing(s) then
+    return V.NOTHING
+  end
+  require_string(s, "replace", 1)
+  if pattern == "" then
+    H.err("D3010", { name = "replace", position = 2, value = pattern })
+  end
+  if not (limit == nil or V.is_nothing(limit)) and limit < 0 then
+    H.err("D3011", { name = "replace", position = 4, value = limit })
+  end
+
+  local replacer
+  if type(replacement) == "table" and (replacement._jsonata_function or replacement._jsonata_lambda) then
+    replacer = function(m)
+      return H.apply(replacement, { m })
+    end
+  else
+    require_string(replacement, "replace", 3)
+    replacer = string_replacer(replacement)
+  end
+
+  local out = {}
+  local count = 0
+  local no_limit = (limit == nil or V.is_nothing(limit))
+  if no_limit or limit > 0 then
+    if H.is_regex(pattern) then
+      local m = H.apply(pattern, { s })
+      local position = 0 -- 0-based char index into s
+      while not V.is_nothing(m) and (no_limit or count < limit) do
+        local mstart = V.obj_get(m, "start")
+        out[#out + 1] = string.sub(s, position + 1, mstart)
+        local rep = replacer(m)
+        if V.typeof(rep) ~= "string" then
+          H.err("D3012", { name = "replace", value = rep })
+        end
+        out[#out + 1] = rep
+        position = mstart + #V.obj_get(m, "match")
+        count = count + 1
+        m = H.apply(V.obj_get(m, "next"), {})
+      end
+      out[#out + 1] = string.sub(s, position + 1)
+    else
+      require_string(pattern, "replace", 2)
+      local position = 1 -- 1-based Lua index
+      local i = string.find(s, pattern, position, true)
+      while i and (no_limit or count < limit) do
+        out[#out + 1] = string.sub(s, position, i - 1)
+        out[#out + 1] = replacement
+        position = i + #pattern
+        count = count + 1
+        i = string.find(s, pattern, position, true)
+      end
+      out[#out + 1] = string.sub(s, position)
+    end
+  else
+    return s
+  end
+  return table.concat(out)
+end, 3, 4, "<s-(sf)(sf)n?:s>")
+
 R.join = H.def(function(arr, sep)
   if nothing_guard(arr) then
     return V.NOTHING
