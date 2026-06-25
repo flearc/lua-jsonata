@@ -31,7 +31,7 @@ local ESCAPES = {
 }
 
 function M.new(source)
-  return setmetatable({ src = source, pos = 1, len = #source }, Tokenizer)
+  return setmetatable({ src = source, pos = 1, len = #source, _prev = nil }, Tokenizer)
 end
 
 function Tokenizer:_peek()
@@ -104,7 +104,7 @@ function Tokenizer:_read_backtick()
   return { type = "name", value = value, position = start }
 end
 
-function Tokenizer:next()
+function Tokenizer:_next_raw()
   self:_skip_ws()
   if self.pos > self.len then
     return nil
@@ -181,6 +181,75 @@ function Tokenizer:next()
   end
 
   errors.raise("S0201", { position = start, token = c })
+end
+
+-- A `/` is a regex when an operand is expected, division when a value precedes.
+local VALUE_END_KEYWORDS = { ["true"] = true, ["false"] = true, ["null"] = true }
+local function operand_expected(prev)
+  if prev == nil then
+    return true
+  end
+  local t, v = prev.type, prev.value
+  if t == "number" or t == "string" or t == "variable" or t == "name" then
+    return false
+  end
+  if t == "operator" and (v == ")" or v == "]" or v == "}") then
+    return false
+  end
+  if t == "keyword" and VALUE_END_KEYWORDS[v] then
+    return false
+  end
+  return true
+end
+
+function Tokenizer:next()
+  self:_skip_ws()
+  if self.pos <= self.len and self:_peek() == "/" and operand_expected(self._prev) then
+    local tok = self:_read_regex()
+    self._prev = tok
+    return tok
+  end
+  local tok = self:_next_raw()
+  self._prev = tok
+  return tok
+end
+
+function Tokenizer:_read_regex()
+  local start = self.pos
+  self.pos = self.pos + 1 -- consume opening '/'
+  local pat_start = self.pos
+  local depth = 0
+  while self.pos <= self.len do
+    local ch = self:_peek()
+    if ch == "\\" then
+      self.pos = self.pos + 2 -- skip escaped char
+    elseif ch == "/" and depth == 0 then
+      local pattern = self.src:sub(pat_start, self.pos - 1)
+      if pattern == "" then
+        errors.raise("S0301", { position = self.pos })
+      end
+      self.pos = self.pos + 1 -- consume closing '/'
+      local fstart = self.pos
+      while self.pos <= self.len do
+        local f = self:_peek()
+        if f == "i" or f == "m" then
+          self.pos = self.pos + 1
+        else
+          break
+        end
+      end
+      local flags = self.src:sub(fstart, self.pos - 1)
+      return { type = "regex", source = pattern, flags = flags, position = start }
+    else
+      if ch == "(" or ch == "[" or ch == "{" then
+        depth = depth + 1
+      elseif ch == ")" or ch == "]" or ch == "}" then
+        depth = depth - 1
+      end
+      self.pos = self.pos + 1
+    end
+  end
+  errors.raise("S0302", { position = self.pos })
 end
 
 return M
