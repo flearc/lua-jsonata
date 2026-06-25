@@ -26,13 +26,16 @@ jobs:
       - name: Set up LuaRocks
         uses: leafo/gh-actions-luarocks@v4
 
-      - name: Install dev dependencies (busted, lua-cjson)
+      # libpcre2-dev provides the PCRE2 C library that lrexlib-pcre2 links against
+      # (the regex engine for $match/$replace/$split/$contains, lazy-loaded).
+      - name: Install the LuaJIT interpreter + PCRE2
+        run: sudo apt-get update && sudo apt-get install -y luajit libpcre2-dev
+
+      - name: Install dev dependencies (busted, lua-cjson, lrexlib-pcre2)
         run: |
           luarocks install busted
           luarocks install lua-cjson
-
-      - name: Install the LuaJIT interpreter
-        run: sudo apt-get update && sudo apt-get install -y luajit
+          luarocks install lrexlib-pcre2
 
       # Invoke busted's runner directly under LuaJIT (this is exactly what
       # busted's own bin/busted does) so the whole suite — unit tests + the
