@@ -189,15 +189,41 @@ function M.eval_variable(node, input, env)
   return v
 end
 
--- Build a fresh sequence, appending elements with flattening rules.
-local function append_flat(seq, value)
+-- Build a fresh sequence, appending elements with path-shape rules.
+local function append_path_value(seq, value, opts)
+  opts = opts or {}
   if V.is_nothing(value) then
     return
   end
-  if V.is_array(value) and not V.get_flag(value, "cons") then
+  if opts.keep_array then
+    seq[#seq + 1] = value
+    return
+  end
+  if V.is_array(value) then
     for i = 1, #value do
       seq[#seq + 1] = value[i]
     end
+    if opts.keep_singleton_on_flatten and #value == 1 then
+      V.set_flag(seq, "keepSingleton", true)
+    end
+  else
+    seq[#seq + 1] = value
+  end
+end
+
+local function append_flat(seq, value)
+  append_path_value(seq, value)
+end
+
+local function append_constructor_value(seq, value, following_step)
+  if V.is_nothing(value) then
+    return
+  end
+  if following_step and following_step.type ~= "sort" and following_step.type ~= "group" and V.is_array(value) then
+    for i = 1, #value do
+      seq[#seq + 1] = value[i]
+    end
+    return
   else
     seq[#seq + 1] = value
   end
@@ -248,7 +274,10 @@ end
 -- Apply predicates attached to a step to a sequence.
 local function apply_predicates(seq, predicates, env, tuple_mode)
   local current = seq
-  for _, pred in ipairs(predicates) do
+  for pi, pred in ipairs(predicates) do
+    if pi > 1 and #current == 1 and V.is_array(current[1]) then
+      current = current[1]
+    end
     local next_seq = V.sequence()
     for i = 1, #current do
       local item = current[i]
@@ -512,11 +541,26 @@ local function step_is_self_contained(steps)
       or s1.type == "function"
       or s1.type == "block"
       or s1.type == "path"
+      or s1.type == "object"
       or s1.type == "wildcard"
       or s1.type == "descendant"
       or s1.type == "parent"
-      or (s1.type == "array" and not (steps[2] and steps[2].type == "variable"))
+      or (s1.type == "array" and not (steps[2] and steps[2].type == "variable" and steps[2].value ~= ""))
     )
+end
+
+local path_keeps_array
+
+local function path_has_predicate(node)
+  for _, s in ipairs(node.steps or {}) do
+    if s.predicate then
+      return true
+    end
+    if s.steps and path_has_predicate(s) then
+      return true
+    end
+  end
+  return false
 end
 
 local function eval_path(node, input, env)
@@ -533,6 +577,7 @@ local function eval_path(node, input, env)
   local context
   local steps = node.steps
   local start = 1
+  local keep_singleton_on_final_flatten = steps[1] and steps[1].type == "path" and V.is_array(input) and path_has_predicate(steps[1])
   -- An array constructor is self-contained (evaluated once, not per-element)
   -- when it is the sole step or the next step is not a variable lookup.
   -- This covers [range][pred] and [range].(expr).
@@ -548,14 +593,18 @@ local function eval_path(node, input, env)
   if first_is_self_contained then
     local var_val = evaluate(steps[1], input, env)
     local result = V.sequence()
-    if steps[1].type == "array" and V.is_array(var_val) then
+    if steps[1].type == "variable" and steps[1].value == "" and V.is_object(var_val) and #V.obj_keys(var_val) == 0 and #steps > 1 then
+      -- Empty Lua tables are adapted as empty objects, but callers often use
+      -- them for empty array input; `$` at the head of a path should seed no
+      -- navigation items in that ambiguous case.
+    elseif steps[1].type == "array" and V.is_array(var_val) then
       -- Spread array elements into the context sequence so subsequent steps
       -- (predicates, maps) operate on individual elements.
       for i = 1, #var_val do
         result[#result + 1] = var_val[i]
       end
     else
-      append_flat(result, var_val)
+      append_path_value(result, var_val)
     end
     if steps[1].predicate then
       result = apply_predicates(result, steps[1].predicate, env)
@@ -579,7 +628,14 @@ local function eval_path(node, input, env)
       for j = 1, #context do
         local item = context[j]
         if not V.is_nothing(item) then
-          append_flat(result, eval_step_on_item(step, item, env))
+          local value = eval_step_on_item(step, item, env)
+          if step.type == "array" then
+            append_constructor_value(result, value, steps[i + 1])
+          elseif step.type == "path" and step.steps and step.steps[1] and step.steps[1].type == "array" and path_keeps_array(step) then
+            append_path_value(result, value, { keep_array = true })
+          else
+            append_path_value(result, value, { keep_singleton_on_flatten = keep_singleton_on_final_flatten and i == #steps })
+          end
         end
       end
       context = result
@@ -592,7 +648,7 @@ local function eval_path(node, input, env)
 end
 
 -- True iff any step of this path (or of any nested path step) carries keepArray.
-local function path_keeps_array(node)
+path_keeps_array = function(node)
   for _, s in ipairs(node.steps) do
     if s.keepArray then
       return true
@@ -608,7 +664,7 @@ end
 local function finalize_sequence(seq, keep_singleton)
   if #seq == 0 then
     return V.NOTHING
-  elseif #seq == 1 and not keep_singleton then
+  elseif #seq == 1 and not (keep_singleton or V.get_flag(seq, "keepSingleton")) then
     return seq[1]
   end
   return seq
