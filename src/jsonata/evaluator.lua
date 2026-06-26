@@ -274,7 +274,10 @@ end
 -- Apply predicates attached to a step to a sequence.
 local function apply_predicates(seq, predicates, env, tuple_mode)
   local current = seq
-  for _, pred in ipairs(predicates) do
+  for pi, pred in ipairs(predicates) do
+    if pi > 1 and #current == 1 and V.is_array(current[1]) then
+      current = current[1]
+    end
     local next_seq = V.sequence()
     for i = 1, #current do
       local item = current[i]
