@@ -193,6 +193,333 @@ local function get_datetime_fragment(comp, component)
   end
 end
 
+-- ===========================================================================
+-- analyse_datetime_picture (faithful port of jsonata.js:490-645)
+-- ===========================================================================
+
+local DEFAULT_PRESENTATION = {
+  Y = "1",
+  M = "1",
+  D = "1",
+  d = "1",
+  F = "n",
+  W = "1",
+  w = "1",
+  X = "1",
+  x = "1",
+  H = "1",
+  h = "1",
+  P = "n",
+  m = "01",
+  s = "01",
+  f = "1",
+  Z = "01:01",
+  z = "01:01",
+  C = "n",
+  E = "n",
+}
+
+local function analyse_datetime_picture(picture)
+  local spec = {}
+  local format = { type = "datetime", parts = spec }
+
+  -- addLiteral(start, end) with 0-based [start, end) JS semantics.
+  -- We mirror JS string indices: picture is treated as a byte string here
+  -- (the suite is ASCII; markers/literals could be multibyte but JS itself
+  -- operates over UTF-16 code units, and our byte ops match for ASCII).
+  local len = #picture
+  local function char_at(i) -- 0-based; returns "" past end (JS charAt)
+    if i < 0 or i >= len then
+      return ""
+    end
+    return picture:sub(i + 1, i + 1)
+  end
+  local function substring(a, b) -- 0-based [a, b)
+    return picture:sub(a + 1, b)
+  end
+  local function index_of(needle, from) -- 0-based, -1 if not found
+    local p = picture:find(needle, from + 1, true)
+    if p == nil then
+      return -1
+    end
+    return p - 1
+  end
+
+  local function add_literal(start, finish)
+    if finish > start then
+      local literal = substring(start, finish)
+      literal = literal:gsub("%]%]", "]")
+      spec[#spec + 1] = { type = "literal", value = literal }
+    end
+  end
+
+  local start, pos = 0, 0
+  while pos < len do
+    if char_at(pos) == "[" then
+      if char_at(pos + 1) == "[" then
+        -- literal [
+        add_literal(start, pos)
+        spec[#spec + 1] = { type = "literal", value = "[" }
+        pos = pos + 2
+        start = pos
+      else
+        -- start of variable marker
+        add_literal(start, pos)
+        start = pos
+        pos = index_of("]", start)
+        if pos == -1 then
+          H.err("D3135", {})
+        end
+        local marker = substring(start + 1, pos)
+        -- whitespace within a variable marker is ignored
+        marker = marker:gsub("%s+", "")
+
+        local def = { type = "marker", component = marker:sub(1, 1) }
+        -- lastIndexOf(',')
+        local comma = -1
+        for i = #marker, 1, -1 do
+          if marker:sub(i, i) == "," then
+            comma = i - 1 -- 0-based
+            break
+          end
+        end
+        local presMod
+        if comma ~= -1 then
+          local widthMod = marker:sub(comma + 2) -- marker.substring(comma+1)
+          local dashPos = widthMod:find("-", 1, true)
+          local minStr, maxStr
+          if dashPos == nil then
+            minStr = widthMod
+          else
+            minStr = widthMod:sub(1, dashPos - 1)
+            maxStr = widthMod:sub(dashPos + 1)
+          end
+          local function parse_width(wm)
+            if wm == nil or wm == "*" then
+              return nil
+            else
+              return math.floor(tonumber(wm))
+            end
+          end
+          def.width = { min = parse_width(minStr), max = parse_width(maxStr) }
+          presMod = marker:sub(2, comma) -- marker.substring(1, comma)
+        else
+          presMod = marker:sub(2) -- marker.substring(1)
+        end
+
+        if #presMod == 1 then
+          def.presentation1 = presMod
+        elseif #presMod > 1 then
+          local lastChar = presMod:sub(#presMod, #presMod)
+          if ("atco"):find(lastChar, 1, true) then
+            def.presentation2 = lastChar
+            if lastChar == "o" then
+              def.ordinal = true
+            end
+            def.presentation1 = presMod:sub(1, #presMod - 1)
+          else
+            def.presentation1 = presMod
+          end
+        else
+          def.presentation1 = DEFAULT_PRESENTATION[def.component]
+        end
+
+        if def.presentation1 == nil then
+          H.err("D3132", { value = def.component })
+        end
+
+        if def.presentation1:sub(1, 1) == "n" then
+          def.names = "lower"
+        elseif def.presentation1:sub(1, 1) == "N" then
+          if def.presentation1:sub(2, 2) == "n" then
+            def.names = "title"
+          else
+            def.names = "upper"
+          end
+        elseif ("YMDdFWwXxHhmsf"):find(def.component, 1, true) then
+          local integerPattern = def.presentation1
+          if def.presentation2 then
+            integerPattern = integerPattern .. ";" .. def.presentation2
+          end
+          def.integerFormat = FI.analyse(integerPattern)
+          if def.width and def.width.min ~= nil then
+            if def.integerFormat.mandatoryDigits < def.width.min then
+              def.integerFormat.mandatoryDigits = def.width.min
+            end
+          end
+          if def.component == "Y" then
+            def.n = -1
+            if def.width and def.width.max ~= nil then
+              def.n = def.width.max
+              def.integerFormat.mandatoryDigits = def.n
+            else
+              local w = def.integerFormat.mandatoryDigits + def.integerFormat.optionalDigits
+              if w >= 2 then
+                def.n = w
+              end
+            end
+          end
+          local previousPart = spec[#spec]
+          if previousPart and previousPart.integerFormat then
+            previousPart.integerFormat.parseWidth = previousPart.integerFormat.mandatoryDigits
+          end
+        end
+
+        if def.component == "Z" or def.component == "z" then
+          def.integerFormat = FI.analyse(def.presentation1)
+        end
+
+        spec[#spec + 1] = def
+        start = pos + 1
+      end
+    else
+      pos = pos + 1
+    end
+  end
+  add_literal(start, pos)
+  return format
+end
+
+-- ===========================================================================
+-- format_datetime (faithful port of jsonata.js:835-948)
+-- ===========================================================================
+
+local MONTHS = {
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+} -- 1..12
+local DAYS = {
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+} -- 1..7
+
+local function format_component(comp, part, offsetHours, offsetMinutes)
+  local value = get_datetime_fragment(comp, part.component)
+
+  if ("YMDdFWwXxHhms"):find(part.component, 1, true) then
+    if part.component == "Y" then
+      -- JS: componentValue % Math.pow(10, n). When n is undefined (the [YN]
+      -- name path, where the integer branch was skipped) JS yields NaN and
+      -- falls through to the D3133 throw below; guard against 10^nil in Lua.
+      if part.n ~= nil and part.n ~= -1 then
+        value = value % (10 ^ part.n)
+      end
+    end
+    if part.names then
+      if part.component == "M" or part.component == "x" then
+        value = MONTHS[value]
+      elseif part.component == "F" then
+        value = DAYS[value]
+      else
+        H.err("D3133", { value = part.component })
+      end
+      if part.names == "upper" then
+        value = value:upper()
+      elseif part.names == "lower" then
+        value = value:lower()
+      end
+      if part.width and part.width.max and #value > part.width.max then
+        value = value:sub(1, part.width.max)
+      end
+    else
+      value = FI.format(value, part.integerFormat)
+    end
+  elseif part.component == "f" then
+    value = FI.format(value, part.integerFormat)
+  elseif part.component == "Z" or part.component == "z" then
+    local offset = offsetHours * 100 + offsetMinutes
+    if part.integerFormat.regular then
+      value = FI.format(offset, part.integerFormat)
+    else
+      local numDigits = part.integerFormat.mandatoryDigits
+      if numDigits == 1 or numDigits == 2 then
+        value = FI.format(offsetHours, part.integerFormat)
+        if offsetMinutes ~= 0 then
+          value = value .. ":" .. FI.format(offsetMinutes, FI.analyse("00"))
+        end
+      elseif numDigits == 3 or numDigits == 4 then
+        value = FI.format(offset, part.integerFormat)
+      else
+        H.err("D3134", { value = numDigits })
+      end
+    end
+    if offset >= 0 then
+      value = "+" .. value
+    end
+    if part.component == "z" then
+      value = "GMT" .. value
+    end
+    if offset == 0 and part.presentation2 == "t" then
+      value = "Z"
+    end
+  elseif part.component == "P" then
+    if part.names == "upper" then
+      value = value:upper()
+    end
+  end
+  return value
+end
+
+local function format_datetime(millis, picture, timezone)
+  local offsetHours, offsetMinutes = 0, 0
+  if not (timezone == nil or V.is_nothing(timezone)) then
+    local offset = tonumber(timezone) or 0
+    local sign = offset < 0 and -1 or 1
+    offsetHours = sign * math.floor(math.abs(offset) / 100)
+    offsetMinutes = offset - offsetHours * 100
+  end
+
+  local formatSpec
+  if picture == nil or V.is_nothing(picture) then
+    formatSpec = analyse_datetime_picture("[Y0001]-[M01]-[D01]T[H01]:[m01]:[s01].[f001][Z01:01t]")
+  else
+    formatSpec = analyse_datetime_picture(picture)
+  end
+
+  local offsetMillis = (60 * offsetHours + offsetMinutes) * 60000
+  local comp = millis_to_components(millis + offsetMillis)
+
+  local result = {}
+  for _, part in ipairs(formatSpec.parts) do
+    if part.type == "literal" then
+      result[#result + 1] = part.value
+    else
+      result[#result + 1] = tostring(format_component(comp, part, offsetHours, offsetMinutes))
+    end
+  end
+  return table.concat(result)
+end
+
 local R = {}
-R._internal = { calendar = calendar, get_datetime_fragment = get_datetime_fragment }
+
+R.fromMillis = H.def(function(millis, picture, timezone)
+  if V.is_nothing(millis) then
+    return V.NOTHING
+  end
+  return format_datetime(millis, picture, timezone)
+end, 1, 3, "<n-s?s?:s>")
+
+R._internal = {
+  calendar = calendar,
+  get_datetime_fragment = get_datetime_fragment,
+  analyse_datetime_picture = analyse_datetime_picture,
+  format_datetime = format_datetime,
+  days = DAYS,
+  months = MONTHS,
+}
 return R

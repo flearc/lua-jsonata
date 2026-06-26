@@ -14,6 +14,7 @@ local categories = {
   require("jsonata.functions.object"),
   require("jsonata.functions.higher_order"),
   require("jsonata.functions.eval"),
+  require("jsonata.functions.datetime"),
 }
 
 M.registry = {}
