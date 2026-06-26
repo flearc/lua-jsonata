@@ -76,13 +76,13 @@ describe("M7a: $contains / $split with regex", function()
   end)
 end)
 
-describe("M7b: H.serialize skips function-valued object keys", function()
-  it("$string of a raw match object omits the next field (valid JSON)", function()
-    -- a regex value applied to a string returns {match,start,end,groups,next};
-    -- $string must NOT emit "next": (a function) -> invalid JSON
+describe("M7b: H.serialize serializes function-valued object keys as empty string", function()
+  it('$string of a raw match object renders next as "" (matches jsonata JSON.stringify replacer)', function()
+    -- jsonata's JSON.stringify replacer maps function values to "" and keeps the key;
+    -- a regex value applied to a string returns {match,start,end,groups,next} where next is a function.
     local s = run('$string(($m := /b+/; $m("abbc")))')
     assert.is_string(s)
-    assert.is_nil(s:find('"next"'))
+    assert.is_truthy(s:find('"next":""'))
     assert.is_truthy(s:find('"match":"bb"'))
   end)
 end)

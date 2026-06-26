@@ -4,8 +4,12 @@ local H = require("jsonata.functions.helpers")
 local R = {}
 
 -- M1 scalar $string (container serialization added in Task 7).
-local function to_string(x)
+local function to_string(x, indent)
   if V.is_nothing(x) then
+    return ""
+  end
+  -- functions/lambdas -> "" (matches jsonata: isFunction(arg) -> '')
+  if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
     return ""
   end
   if V.is_null(x) then
@@ -17,10 +21,13 @@ local function to_string(x)
   elseif t == "boolean" then
     return x and "true" or "false"
   elseif t == "number" then
+    if x == math.huge or x == -math.huge or x ~= x then
+      H.err("D3001", { value = x })
+    end
     return H.num_to_str(x)
   end
-  -- arrays/objects: JSON serialization
-  return H.serialize(x)
+  -- arrays/objects: JSON serialization (indent=nil -> compact)
+  return H.serialize(x, indent)
 end
 R._to_string = to_string
 
@@ -28,7 +35,7 @@ R.string = H.def(function(x, prettify)
   if V.is_nothing(x) then
     return V.NOTHING
   end
-  return to_string(x)
+  return to_string(x, prettify == true and 2 or nil)
 end, 1, 2, "<x-b?:s>")
 
 local function nothing_guard(x)

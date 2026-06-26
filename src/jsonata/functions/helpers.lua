@@ -72,12 +72,132 @@ local function truthy(x)
 end
 H.truthy = truthy
 
--- Render a JSON number the JSONata way: integer-valued -> no trailing ".0".
-function H.num_to_str(x)
-  if x == math.floor(x) and x == x and x ~= math.huge and x ~= -math.huge then
-    return string.format("%d", x)
+-- Format a (digits_str, exponent) pair using ECMAScript Number::toString thresholds.
+-- digits is a string of significant digits with no trailing zeros; e10 is the
+-- base-10 exponent of the leading digit (so the value is digits * 10^(e10-k+1)).
+local function format_digits(digits, e10, neg)
+  local k = #digits
+  local n = e10 + 1
+  local out
+  if k <= n and n <= 21 then
+    out = digits .. string.rep("0", n - k)
+  elseif 0 < n and n <= 21 then
+    out = digits:sub(1, n) .. "." .. digits:sub(n + 1)
+  elseif -6 < n and n <= 0 then
+    out = "0." .. string.rep("0", -n) .. digits
+  else
+    local m = digits:sub(1, 1)
+    if k > 1 then
+      m = m .. "." .. digits:sub(2)
+    end
+    local ee = n - 1
+    out = m .. "e" .. (ee >= 0 and "+" or "-") .. math.abs(ee)
   end
-  return tostring(x)
+  return neg and ("-" .. out) or out
+end
+
+-- Round a digit string (all significant digits, no trailing zeros) to 15 digits,
+-- half-away-from-zero, using carry propagation. Returns (new_digits, new_exp).
+-- exp is the base-10 exponent of the leading digit.
+-- Only call when #digits > 15 (caller must ensure this).
+local function round15_digits(digits, exp)
+  local keep = digits:sub(1, 15)
+  local d16 = tonumber(digits:sub(16, 16)) or 0
+  if d16 >= 5 then
+    -- Increment via carry propagation (pure digit-string, no float arithmetic)
+    local chars = {}
+    for i = 1, #keep do
+      chars[i] = keep:byte(i) - 48
+    end -- '0'=48
+    local carry = 1
+    for i = #chars, 1, -1 do
+      local d = chars[i] + carry
+      if d >= 10 then
+        chars[i] = d - 10
+        carry = 1
+      else
+        chars[i] = d
+        carry = 0
+        break
+      end
+    end
+    local s = ""
+    if carry == 1 then
+      s = "1"
+      exp = exp + 1
+    end
+    for i = 1, #chars do
+      s = s .. chars[i]
+    end
+    keep = s
+  end
+  keep = keep:gsub("0+$", "")
+  if keep == "" then
+    keep = "0"
+  end
+  return keep, exp
+end
+
+-- Faithful port of the ECMAScript Number::toString algorithm: shortest round-trip
+-- significant digits, then JS's fixed-vs-exponential thresholds (fixed when
+-- -6 < n <= 21, else e+N/e-N). Non-integer values are first rounded to 15
+-- significant digits (JS JSONata's toPrecision(15) step) to suppress FP noise
+-- (e.g. $sum rounding errors), using half-away-from-zero (JS semantics, not C's
+-- half-to-even). Integer-valued inputs bypass rounding so that
+-- $formatInteger/$formatNumber/$formatBase/$round are unaffected.
+function H.num_to_str(x)
+  if x ~= x then
+    return "NaN"
+  end
+  if x == math.huge then
+    return "Infinity"
+  end
+  if x == -math.huge then
+    return "-Infinity"
+  end
+  if x == 0 then
+    return "0" -- also covers -0 (0 == -0 in Lua)
+  end
+  local neg = x < 0
+  local a = math.abs(x)
+  -- Find shortest round-trip digit string for a.
+  local digits, e10
+  for p = 0, 16 do
+    local s = string.format("%." .. p .. "e", a)
+    if tonumber(s) == a then
+      local mant, exp = s:match("^(%d[%.%d]*)[eE]([%+%-]%d+)$")
+      mant = mant:gsub("%.", ""):gsub("0+$", "")
+      if mant == "" then
+        mant = "0"
+      end
+      digits = mant
+      e10 = tonumber(exp)
+      break
+    end
+  end
+  -- toPrecision(15): for non-integer values with more than 15 significant digits
+  -- in their shortest representation, round to 15 sig digits half-away-from-zero
+  -- (JS semantics). Values with <= 15 digits already satisfy toPrecision(15)
+  -- exactly (same float), so no rounding is needed and we keep the shorter form.
+  -- The rounding must operate on the TRUE binary value's digits, not the shortest
+  -- round-trip form: the shortest repr's 16th digit can differ from the exact
+  -- value's (e.g. shortest "...4535" vs true "...45349"), which would flip a
+  -- round-down into a round-up. So we feed round15_digits the full-precision
+  -- representation instead.
+  --
+  -- We use %.24e (25 significant digits) rather than just 17: rounding the value
+  -- to 17 digits can ITSELF flip the 16th digit at a near-tie (e.g. the true
+  -- value 7.10145235455033 4966... has 16th digit 4, but %.16e rounds it to
+  -- ...50, falsely creating a round-up tie). 25 digits exceed double precision
+  -- (~17 sig digits), so digit 16 onward faithfully reflects the exact binary
+  -- value, and round15_digits keys off the TRUE 16th digit.
+  if a ~= math.floor(a) and #digits > 15 then
+    local full = string.format("%.24e", a) -- 25 significant digits (exact-faithful)
+    local fmant, fexp = full:match("^(%d[%.%d]*)[eE]([%+%-]%d+)$")
+    fmant = fmant:gsub("%.", "")
+    digits, e10 = round15_digits(fmant, tonumber(fexp))
+  end
+  return format_digits(digits, e10, neg)
 end
 
 -- Split a UTF-8 string into an array of single-codepoint substrings.
@@ -223,10 +343,11 @@ local function json_escape(s)
   )
 end
 
-function H.serialize(x)
+function H.serialize(x, indent, depth)
+  depth = depth or 0
   local V = require("jsonata.value")
   if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
-    return ""
+    return '""'
   end
   if V.is_null(x) then
     return "null"
@@ -245,21 +366,50 @@ function H.serialize(x)
   elseif t == "boolean" then
     return x and "true" or "false"
   elseif t == "array" then
-    local parts = {}
-    for i = 1, #x do
-      parts[i] = H.serialize(x[i])
-    end
-    return "[" .. table.concat(parts, ",") .. "]"
-  elseif t == "object" then
-    local parts = {}
-    for _, k in ipairs(V.obj_keys(x)) do
-      local val = V.obj_get(x, k)
-      local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
-      if not is_fn and not V.is_nothing(val) then
-        parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(val)
+    if indent then
+      if #x == 0 then
+        return "[]"
       end
+      local pad = string.rep(" ", indent * (depth + 1))
+      local closepad = string.rep(" ", indent * depth)
+      local parts = {}
+      for i = 1, #x do
+        parts[i] = H.serialize(x[i], indent, depth + 1)
+      end
+      return "[\n" .. pad .. table.concat(parts, ",\n" .. pad) .. "\n" .. closepad .. "]"
+    else
+      local parts = {}
+      for i = 1, #x do
+        parts[i] = H.serialize(x[i])
+      end
+      return "[" .. table.concat(parts, ",") .. "]"
     end
-    return "{" .. table.concat(parts, ",") .. "}"
+  elseif t == "object" then
+    if indent then
+      local keys = V.obj_keys(x)
+      local kvs = {}
+      for _, k in ipairs(keys) do
+        local val = V.obj_get(x, k)
+        if not V.is_nothing(val) then
+          kvs[#kvs + 1] = '"' .. json_escape(k) .. '": ' .. H.serialize(val, indent, depth + 1)
+        end
+      end
+      if #kvs == 0 then
+        return "{}"
+      end
+      local pad = string.rep(" ", indent * (depth + 1))
+      local closepad = string.rep(" ", indent * depth)
+      return "{\n" .. pad .. table.concat(kvs, ",\n" .. pad) .. "\n" .. closepad .. "}"
+    else
+      local parts = {}
+      for _, k in ipairs(V.obj_keys(x)) do
+        local val = V.obj_get(x, k)
+        if not V.is_nothing(val) then
+          parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(val)
+        end
+      end
+      return "{" .. table.concat(parts, ",") .. "}"
+    end
   end
   return ""
 end
