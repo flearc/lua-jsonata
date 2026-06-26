@@ -203,6 +203,9 @@ local function append_path_value(seq, value, opts)
     for i = 1, #value do
       seq[#seq + 1] = value[i]
     end
+    if opts.keep_singleton_on_flatten and #value == 1 then
+      V.set_flag(seq, "keepSingleton", true)
+    end
   else
     seq[#seq + 1] = value
   end
@@ -212,11 +215,11 @@ local function append_flat(seq, value)
   append_path_value(seq, value)
 end
 
-local function append_constructor_value(seq, value, has_following_step)
+local function append_constructor_value(seq, value, following_step)
   if V.is_nothing(value) then
     return
   end
-  if has_following_step and V.is_array(value) then
+  if following_step and following_step.type ~= "sort" and following_step.type ~= "group" and V.is_array(value) then
     for i = 1, #value do
       seq[#seq + 1] = value[i]
     end
@@ -545,6 +548,18 @@ end
 
 local path_keeps_array
 
+local function path_has_predicate(node)
+  for _, s in ipairs(node.steps or {}) do
+    if s.predicate then
+      return true
+    end
+    if s.steps and path_has_predicate(s) then
+      return true
+    end
+  end
+  return false
+end
+
 local function eval_path(node, input, env)
   -- Special case: when the first step produces a value from the WHOLE input
   -- rather than navigating into it per-element, evaluate it once and seed the
@@ -559,6 +574,7 @@ local function eval_path(node, input, env)
   local context
   local steps = node.steps
   local start = 1
+  local keep_singleton_on_final_flatten = steps[1] and steps[1].type == "path" and V.is_array(input) and path_has_predicate(steps[1])
   -- An array constructor is self-contained (evaluated once, not per-element)
   -- when it is the sole step or the next step is not a variable lookup.
   -- This covers [range][pred] and [range].(expr).
@@ -611,11 +627,11 @@ local function eval_path(node, input, env)
         if not V.is_nothing(item) then
           local value = eval_step_on_item(step, item, env)
           if step.type == "array" then
-            append_constructor_value(result, value, i < #steps)
+            append_constructor_value(result, value, steps[i + 1])
           elseif step.type == "path" and step.steps and step.steps[1] and step.steps[1].type == "array" and path_keeps_array(step) then
             append_path_value(result, value, { keep_array = true })
           else
-            append_path_value(result, value)
+            append_path_value(result, value, { keep_singleton_on_flatten = keep_singleton_on_final_flatten and i == #steps })
           end
         end
       end
@@ -645,7 +661,7 @@ end
 local function finalize_sequence(seq, keep_singleton)
   if #seq == 0 then
     return V.NOTHING
-  elseif #seq == 1 and not keep_singleton then
+  elseif #seq == 1 and not (keep_singleton or V.get_flag(seq, "keepSingleton")) then
     return seq[1]
   end
   return seq

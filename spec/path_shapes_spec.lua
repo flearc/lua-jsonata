@@ -29,6 +29,24 @@ describe("M9a path shapes: constructed arrays in paths", function()
     assert.are.same({ 3, 1578381600 }, run("$.[value,epochSeconds]", one))
     assert.are.same({ { 3, 1578381600 } }, run("$.[value,epochSeconds][]", one))
   end)
+
+  it("constructed rows remain whole when followed by sort", function()
+    local unsorted = {
+      { epochSeconds = 1578381700, value = 5 },
+      { epochSeconds = 1578381600, value = 3 },
+    }
+    assert.are.same({
+      { 3, 1578381600 },
+      { 5, 1578381700 },
+    }, run("$.[value,epochSeconds]^($[1])", unsorted))
+  end)
+
+  it("constructed rows remain whole when followed by group", function()
+    assert.are.same({
+      ["3"] = { 3, 1578381600 },
+      ["5"] = { 5, 1578381700 },
+    }, run("$.[value,epochSeconds]{ $string($[0]): $ }", rows))
+  end)
 end)
 
 describe("M9a path shapes: nested array constructors", function()
