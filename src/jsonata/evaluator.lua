@@ -691,6 +691,64 @@ local function path_is_tuple(node)
   return false
 end
 
+local function apply_single_nested_tuple_step(tuples, step, env)
+  if step.type ~= "path" or not step.steps or #step.steps ~= 1 then
+    return nil
+  end
+  local inner = step.steps[1]
+  if not (inner.tuple or inner.predicate or inner.stages or inner.keepArray) then
+    return nil
+  end
+
+  local next_tuples = {}
+  for j = 1, #tuples do
+    local t = tuples[j]
+    local item = t["@"]
+    if not V.is_nothing(item) then
+      local frame = create_frame_from_tuple(env, t)
+      local res = eval_step_on_item(inner, item, frame)
+      if not V.is_nothing(res) then
+        if V.is_sequence(res) and V.get_flag(res, "tuple_stream") then
+          for b = 1, #res do
+            local nt = copy_tuple(t)
+            for k, v in pairs(res[b]) do
+              nt[k] = v
+            end
+            next_tuples[#next_tuples + 1] = nt
+          end
+        else
+          local list = res
+          if not V.is_array(res) then
+            list = { res }
+          end
+          for b = 1, #list do
+            local nt = copy_tuple(t)
+            if inner.focus then
+              nt[inner.focus] = list[b]
+            else
+              nt["@"] = list[b]
+            end
+            if inner.index then
+              nt[inner.index] = b - 1
+            end
+            if inner.ancestor then
+              nt[inner.ancestor.label] = item
+            end
+            next_tuples[#next_tuples + 1] = nt
+          end
+        end
+      end
+    end
+  end
+
+  if inner.stages then
+    next_tuples = apply_stages(next_tuples, inner.stages, env)
+  elseif inner.predicate then
+    next_tuples = apply_predicates(next_tuples, inner.predicate, env, true)
+  end
+  return next_tuples
+end
+
 -- Tuple-stream variant of eval_path: used when any step carries .tuple (an
 -- ancestor anchor wired by the parser). Tuples flow per item; a step with
 -- .ancestor binds its INPUT item under the slot label on every output tuple;
@@ -784,50 +842,53 @@ local function eval_path_tuple(node, input, env, want_tuples)
       -- unaffected here.)
       tuples = values_to_tuples(eval_group_step(tuples, step.pairs, env, true))
     else
-      local next_tuples = {}
-      for j = 1, #tuples do
-        local t = tuples[j]
-        local item = t["@"]
-        if not V.is_nothing(item) then
-          local frame = create_frame_from_tuple(env, t)
-          local res
-          if path_is_tuple(step) then
-            -- nested tuple path (e.g. focus/index step wrapped to hold a
-            -- predicate): evaluate it as a tuple stream so its bindings survive.
-            res = eval_path_tuple(step, item, frame, true)
-          else
-            res = eval_step_on_item(step, item, frame)
-          end
-          if not V.is_nothing(res) then
-            if V.is_sequence(res) and V.get_flag(res, "tuple_stream") then
-              -- nested tuple-returning path: merge its bindings wholesale
-              for b = 1, #res do
-                local nt = copy_tuple(t)
-                for k, v in pairs(res[b]) do
-                  nt[k] = v
-                end
-                next_tuples[#next_tuples + 1] = nt
-              end
+      local next_tuples = apply_single_nested_tuple_step(tuples, step, env)
+      if not next_tuples then
+        next_tuples = {}
+        for j = 1, #tuples do
+          local t = tuples[j]
+          local item = t["@"]
+          if not V.is_nothing(item) then
+            local frame = create_frame_from_tuple(env, t)
+            local res
+            if path_is_tuple(step) then
+              -- nested tuple path (e.g. focus/index step wrapped to hold a
+              -- predicate): evaluate it as a tuple stream so its bindings survive.
+              res = eval_path_tuple(step, item, frame, true)
             else
-              -- one tuple per result element; no cons exception in tuple mode
-              local list = res
-              if not V.is_array(res) then
-                list = { res }
-              end
-              for b = 1, #list do
-                local nt = copy_tuple(t)
-                if step.focus then
-                  nt[step.focus] = list[b] -- bind under $v; @ stays at the parent context
-                else
-                  nt["@"] = list[b]
+              res = eval_step_on_item(step, item, frame)
+            end
+            if not V.is_nothing(res) then
+              if V.is_sequence(res) and V.get_flag(res, "tuple_stream") then
+                -- nested tuple-returning path: merge its bindings wholesale
+                for b = 1, #res do
+                  local nt = copy_tuple(t)
+                  for k, v in pairs(res[b]) do
+                    nt[k] = v
+                  end
+                  next_tuples[#next_tuples + 1] = nt
                 end
-                if step.index then
-                  nt[step.index] = b - 1 -- 0-based position within this item's results
+              else
+                -- one tuple per result element; no cons exception in tuple mode
+                local list = res
+                if not V.is_array(res) then
+                  list = { res }
                 end
-                if step.ancestor then
-                  nt[step.ancestor.label] = item
+                for b = 1, #list do
+                  local nt = copy_tuple(t)
+                  if step.focus then
+                    nt[step.focus] = list[b] -- bind under $v; @ stays at the parent context
+                  else
+                    nt["@"] = list[b]
+                  end
+                  if step.index then
+                    nt[step.index] = b - 1 -- 0-based position within this item's results
+                  end
+                  if step.ancestor then
+                    nt[step.ancestor.label] = item
+                  end
+                  next_tuples[#next_tuples + 1] = nt
                 end
-                next_tuples[#next_tuples + 1] = nt
               end
             end
           end
