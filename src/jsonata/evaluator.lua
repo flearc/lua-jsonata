@@ -1059,6 +1059,10 @@ local function _evaluate(node, input, env)
         for i = 1, #val do
           arr[#arr + 1] = val[i]
         end
+      elseif V.is_array(val) and not V.get_flag(val, "cons") then
+        for i = 1, #val do
+          arr[#arr + 1] = val[i]
+        end
       elseif not V.is_nothing(val) then
         arr[#arr + 1] = val
       end
