@@ -259,6 +259,22 @@ describe("M8c-2: $toMillis picture parse", function()
   end)
 end)
 
+describe("M8c-2: $toMillis ISO out-of-range fields -> NaN (matching Date.parse)", function()
+  it("out-of-range ISO fields return NaN (not rollover)", function()
+    for _, ts in ipairs({ "2018-13", "2018-00", "2018-13-01", "2018-10-32", "2018-10-00", "2018-10-30T25:00:00Z" }) do
+      local r = run('$toMillis("' .. ts .. '")')
+      assert.is_true(type(r) == "number" and r ~= r, ts .. " should be NaN")
+    end
+  end)
+  it("in-range JS-rolled overflows still parse (not NaN)", function()
+    -- day=30 in Feb is <= 31, so not rejected; JS rolls it to Mar 2
+    local r = run('$toMillis("2018-02-30")')
+    assert.is_true(type(r) == "number" and r == r, "2018-02-30 should be a finite number")
+    -- hour=24 is allowed; JS rolls to next day; only hour>=25 is rejected
+    assert.are.equal(run('$toMillis("2018-10-31T00:00:00Z")'), run('$toMillis("2018-10-30T24:00:00Z")'))
+  end)
+end)
+
 describe("M8c-2: $now / $millis + now-fill", function()
   it("$millis is a number; $now is an ISO string", function()
     local ms = run("$millis()")

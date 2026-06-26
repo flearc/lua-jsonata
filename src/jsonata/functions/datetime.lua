@@ -561,6 +561,13 @@ local function parse_iso8601(ts)
     ms = math.floor(tonumber("0." .. frac:sub(1, 3)) * 1000)
     pos = pos + 1 + #frac
   end
+  -- Reject out-of-range fields, matching JS Date.parse -> NaN behaviour.
+  -- The loose ISO regex allows month 00-19, day 00-39, hour 00-29, but Date.parse
+  -- returns NaN for month>12, month<1, day>31, day<1, or hour>24 (25+).
+  -- In-range overflows that JS itself rolls (Feb-30, hour-24) must NOT be rejected.
+  if month < 1 or month > 12 or day < 1 or day > 31 or hour > 24 then
+    return 0 / 0 -- NaN, matching JS Date.parse for out-of-range ISO fields
+  end
   local tzmillis = 0
   local tz = ts:sub(pos)
   if tz ~= "" and tz ~= "Z" then
