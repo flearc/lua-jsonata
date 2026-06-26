@@ -1,5 +1,6 @@
 local F = require("jsonata.functions")
 local V = require("jsonata.value")
+local jsonata = require("jsonata")
 
 local function arr(...)
   return V.array({ ... })
@@ -16,6 +17,10 @@ describe("array functions", function()
   it("$reverse", function()
     local r = F.reverse.impl(arr(1, 2, 3))
     assert.are.same({ 3, 2, 1 }, { r[1], r[2], r[3] })
+  end)
+
+  it("$reverse does not mutate the context array", function()
+    assert.are.same({ { 1, 2, 3 }, { 3, 2, 1 }, { 1, 2, 3 } }, jsonata.compile("[[$], [$reverse($)], [$]]"):evaluate({ 1, 2, 3 }))
   end)
 
   it("$distinct dedupes by value, first-seen order", function()
