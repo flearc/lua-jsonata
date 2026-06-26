@@ -539,6 +539,29 @@ local function integer_parser(format)
   end
 end
 
+-- ---- regex generation (jsonata generateRegex integer branch) --------------
+local word_keys = {}
+for k in pairs(WORD_VALUES) do
+  word_keys[#word_keys + 1] = k
+end
+
+local function integer_regex(spec)
+  if spec.primary == "letters" then
+    return spec.case == "upper" and "[A-Z]+" or "[a-z]+"
+  elseif spec.primary == "roman" then
+    return spec.case == "upper" and "[MDCLXVI]+" or "[mdclxvi]+"
+  elseif spec.primary == "words" then
+    return "(?:" .. table.concat(word_keys, "|") .. "|and|[\\-, ])+"
+  else
+    local re = "[0-9]"
+    re = re .. (spec.parseWidth and ("{" .. spec.parseWidth .. "}") or "+")
+    if spec.ordinal then
+      re = re .. "(?:th|st|nd|rd)"
+    end
+    return re
+  end
+end
+
 -- ---- builtins -------------------------------------------------------------
 local R = {}
 
@@ -562,6 +585,8 @@ R._internal = {
   analyse = analyse_integer_picture,
   format = format_integer_spec,
   parser = integer_parser,
+  integer_regex = integer_regex,
+  word_keys = word_keys,
 }
 
 return R
