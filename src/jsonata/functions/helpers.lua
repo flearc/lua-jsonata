@@ -72,12 +72,64 @@ local function truthy(x)
 end
 H.truthy = truthy
 
--- Render a JSON number the JSONata way: integer-valued -> no trailing ".0".
+-- Faithful port of the ECMAScript Number::toString algorithm: shortest round-trip
+-- significant digits, then JS's fixed-vs-exponential thresholds (fixed when
+-- -6 < n <= 21, else e+N/e-N). Non-integer values are first rounded to 15
+-- significant digits (JS JSONata's toPrecision(15) step) to suppress FP noise
+-- (e.g. $sum rounding errors). Integer-valued inputs bypass rounding so that
+-- $formatInteger/$formatNumber/$formatBase/$round are unaffected.
 function H.num_to_str(x)
-  if x == math.floor(x) and x == x and x ~= math.huge and x ~= -math.huge then
-    return string.format("%d", x)
+  if x ~= x then
+    return "NaN"
   end
-  return tostring(x)
+  if x == math.huge then
+    return "Infinity"
+  end
+  if x == -math.huge then
+    return "-Infinity"
+  end
+  if x == 0 then
+    return "0" -- also covers -0 (0 == -0 in Lua)
+  end
+  local neg = x < 0
+  local a = math.abs(x)
+  -- toPrecision(15): suppress FP accumulation noise for non-integer values,
+  -- matching JSONata JS's JSON.stringify replacer behaviour.
+  if a ~= math.floor(a) then
+    a = tonumber(string.format("%.15g", a))
+  end
+  local digits, e10
+  for p = 0, 16 do
+    local s = string.format("%." .. p .. "e", a) -- "D.DDDe±XX" (or "De±XX" for p=0)
+    if tonumber(s) == a then
+      local mant, exp = s:match("^(%d[%.%d]*)[eE]([%+%-]%d+)$")
+      mant = mant:gsub("%.", ""):gsub("0+$", "")
+      if mant == "" then
+        mant = "0"
+      end
+      digits = mant
+      e10 = tonumber(exp)
+      break
+    end
+  end
+  local k = #digits
+  local n = e10 + 1
+  local out
+  if k <= n and n <= 21 then
+    out = digits .. string.rep("0", n - k)
+  elseif 0 < n and n <= 21 then
+    out = digits:sub(1, n) .. "." .. digits:sub(n + 1)
+  elseif -6 < n and n <= 0 then
+    out = "0." .. string.rep("0", -n) .. digits
+  else
+    local m = digits:sub(1, 1)
+    if k > 1 then
+      m = m .. "." .. digits:sub(2)
+    end
+    local ee = n - 1
+    out = m .. "e" .. (ee >= 0 and "+" or "-") .. math.abs(ee)
+  end
+  return neg and ("-" .. out) or out
 end
 
 -- Split a UTF-8 string into an array of single-codepoint substrings.
