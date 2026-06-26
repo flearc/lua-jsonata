@@ -55,6 +55,30 @@ describe("toPrecision(15) rounds half away from zero (JS), not half-even", funct
   end
 end)
 
+describe("toPrecision(15) rounds the TRUE value, not the shortest decimal", function()
+  local cases = {
+    { "-390371.3223479555", "-390371.322347955" },
+    { "577808.0250964535", "577808.025096453" },
+    { "2471143.010757465", "2471143.01075746" },
+    { "4827141766.355905", "4827141766.3559" },
+    -- regressions to keep green (true exact ties round away):
+    { "572242133073302.5", "572242133073303" },
+    { "999999999999999.5", "1000000000000000" },
+    { "22/7", "3.14285714285714" },
+    { "0.1+0.2", "0.3" },
+    { "5e-324", "5e-324" },
+    { "1.5", "1.5" },
+    { "123", "123" },
+    { "1e20", "100000000000000000000" },
+    { "1e21", "1e+21" },
+  }
+  for _, c in ipairs(cases) do
+    it("$string(" .. c[1] .. ") = " .. c[2], function()
+      assert.are.equal(c[2], run("$string(" .. c[1] .. ")"))
+    end)
+  end
+end)
+
 describe("$string non-finite + functions + embedded rounding", function()
   it("non-finite number -> D3001", function()
     local ok, err = pcall(run, "$string(1/0)")

@@ -179,8 +179,23 @@ function H.num_to_str(x)
   -- in their shortest representation, round to 15 sig digits half-away-from-zero
   -- (JS semantics). Values with <= 15 digits already satisfy toPrecision(15)
   -- exactly (same float), so no rounding is needed and we keep the shorter form.
+  -- The rounding must operate on the TRUE binary value's digits, not the shortest
+  -- round-trip form: the shortest repr's 16th digit can differ from the exact
+  -- value's (e.g. shortest "...4535" vs true "...45349"), which would flip a
+  -- round-down into a round-up. So we feed round15_digits the full-precision
+  -- representation instead.
+  --
+  -- We use %.24e (25 significant digits) rather than just 17: rounding the value
+  -- to 17 digits can ITSELF flip the 16th digit at a near-tie (e.g. the true
+  -- value 7.10145235455033 4966... has 16th digit 4, but %.16e rounds it to
+  -- ...50, falsely creating a round-up tie). 25 digits exceed double precision
+  -- (~17 sig digits), so digit 16 onward faithfully reflects the exact binary
+  -- value, and round15_digits keys off the TRUE 16th digit.
   if a ~= math.floor(a) and #digits > 15 then
-    digits, e10 = round15_digits(digits, e10)
+    local full = string.format("%.24e", a) -- 25 significant digits (exact-faithful)
+    local fmant, fexp = full:match("^(%d[%.%d]*)[eE]([%+%-]%d+)$")
+    fmant = fmant:gsub("%.", "")
+    digits, e10 = round15_digits(fmant, tonumber(fexp))
   end
   return format_digits(digits, e10, neg)
 end
