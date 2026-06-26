@@ -297,9 +297,12 @@ local function analyse_datetime_picture(picture)
           local function parse_width(wm)
             if wm == nil or wm == "*" then
               return nil
-            else
-              return math.floor(tonumber(wm))
             end
+            local n = tonumber(wm)
+            if n == nil then
+              return 0 / 0 -- NaN, matching JS parseInt("") / parseInt("x"); flows benignly through < comparisons
+            end
+            return math.floor(n)
           end
           def.width = { min = parse_width(minStr), max = parse_width(maxStr) }
           presMod = marker:sub(2, comma) -- marker.substring(1, comma)
@@ -479,9 +482,8 @@ local function format_datetime(millis, picture, timezone)
   local offsetHours, offsetMinutes = 0, 0
   if not (timezone == nil or V.is_nothing(timezone)) then
     local offset = tonumber(timezone) or 0
-    local sign = offset < 0 and -1 or 1
-    offsetHours = sign * math.floor(math.abs(offset) / 100)
-    offsetMinutes = offset - offsetHours * 100
+    offsetHours = math.floor(offset / 100)
+    offsetMinutes = offset - itrunc(offset / 100) * 100
   end
 
   local formatSpec
