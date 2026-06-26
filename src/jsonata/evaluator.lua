@@ -199,7 +199,7 @@ local function append_path_value(seq, value, opts)
     seq[#seq + 1] = value
     return
   end
-  if V.is_array(value) and not V.get_flag(value, "cons") then
+  if V.is_array(value) then
     for i = 1, #value do
       seq[#seq + 1] = value[i]
     end
@@ -535,12 +535,15 @@ local function step_is_self_contained(steps)
       or s1.type == "function"
       or s1.type == "block"
       or s1.type == "path"
+      or s1.type == "object"
       or s1.type == "wildcard"
       or s1.type == "descendant"
       or s1.type == "parent"
-      or (s1.type == "array" and not (steps[2] and steps[2].type == "variable"))
+      or (s1.type == "array" and not (steps[2] and steps[2].type == "variable" and steps[2].value ~= ""))
     )
 end
+
+local path_keeps_array
 
 local function eval_path(node, input, env)
   -- Special case: when the first step produces a value from the WHOLE input
@@ -571,14 +574,18 @@ local function eval_path(node, input, env)
   if first_is_self_contained then
     local var_val = evaluate(steps[1], input, env)
     local result = V.sequence()
-    if steps[1].type == "array" and V.is_array(var_val) then
+    if steps[1].type == "variable" and steps[1].value == "" and V.is_object(var_val) and #V.obj_keys(var_val) == 0 and #steps > 1 then
+      -- Empty Lua tables are adapted as empty objects, but callers often use
+      -- them for empty array input; `$` at the head of a path should seed no
+      -- navigation items in that ambiguous case.
+    elseif steps[1].type == "array" and V.is_array(var_val) then
       -- Spread array elements into the context sequence so subsequent steps
       -- (predicates, maps) operate on individual elements.
       for i = 1, #var_val do
         result[#result + 1] = var_val[i]
       end
     else
-      append_flat(result, var_val)
+      append_path_value(result, var_val)
     end
     if steps[1].predicate then
       result = apply_predicates(result, steps[1].predicate, env)
@@ -602,7 +609,14 @@ local function eval_path(node, input, env)
       for j = 1, #context do
         local item = context[j]
         if not V.is_nothing(item) then
-          append_flat(result, eval_step_on_item(step, item, env))
+          local value = eval_step_on_item(step, item, env)
+          if step.type == "array" then
+            append_constructor_value(result, value, i < #steps)
+          elseif step.type == "path" and step.steps and step.steps[1] and step.steps[1].type == "array" and path_keeps_array(step) then
+            append_path_value(result, value, { keep_array = true })
+          else
+            append_path_value(result, value)
+          end
         end
       end
       context = result
@@ -615,7 +629,7 @@ local function eval_path(node, input, env)
 end
 
 -- True iff any step of this path (or of any nested path step) carries keepArray.
-local function path_keeps_array(node)
+path_keeps_array = function(node)
   for _, s in ipairs(node.steps) do
     if s.keepArray then
       return true
