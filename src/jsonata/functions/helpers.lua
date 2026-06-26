@@ -328,7 +328,8 @@ local function json_escape(s)
   )
 end
 
-function H.serialize(x)
+function H.serialize(x, indent, depth)
+  depth = depth or 0
   local V = require("jsonata.value")
   if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
     return ""
@@ -350,21 +351,52 @@ function H.serialize(x)
   elseif t == "boolean" then
     return x and "true" or "false"
   elseif t == "array" then
-    local parts = {}
-    for i = 1, #x do
-      parts[i] = H.serialize(x[i])
-    end
-    return "[" .. table.concat(parts, ",") .. "]"
-  elseif t == "object" then
-    local parts = {}
-    for _, k in ipairs(V.obj_keys(x)) do
-      local val = V.obj_get(x, k)
-      local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
-      if not is_fn and not V.is_nothing(val) then
-        parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(val)
+    if indent then
+      if #x == 0 then
+        return "[]"
       end
+      local pad = string.rep(" ", indent * (depth + 1))
+      local closepad = string.rep(" ", indent * depth)
+      local parts = {}
+      for i = 1, #x do
+        parts[i] = H.serialize(x[i], indent, depth + 1)
+      end
+      return "[\n" .. pad .. table.concat(parts, ",\n" .. pad) .. "\n" .. closepad .. "]"
+    else
+      local parts = {}
+      for i = 1, #x do
+        parts[i] = H.serialize(x[i])
+      end
+      return "[" .. table.concat(parts, ",") .. "]"
     end
-    return "{" .. table.concat(parts, ",") .. "}"
+  elseif t == "object" then
+    if indent then
+      local keys = V.obj_keys(x)
+      local kvs = {}
+      for _, k in ipairs(keys) do
+        local val = V.obj_get(x, k)
+        local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
+        if not is_fn and not V.is_nothing(val) then
+          kvs[#kvs + 1] = '"' .. json_escape(k) .. '": ' .. H.serialize(val, indent, depth + 1)
+        end
+      end
+      if #kvs == 0 then
+        return "{}"
+      end
+      local pad = string.rep(" ", indent * (depth + 1))
+      local closepad = string.rep(" ", indent * depth)
+      return "{\n" .. pad .. table.concat(kvs, ",\n" .. pad) .. "\n" .. closepad .. "}"
+    else
+      local parts = {}
+      for _, k in ipairs(V.obj_keys(x)) do
+        local val = V.obj_get(x, k)
+        local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
+        if not is_fn and not V.is_nothing(val) then
+          parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(val)
+        end
+      end
+      return "{" .. table.concat(parts, ",") .. "}"
+    end
   end
   return ""
 end
