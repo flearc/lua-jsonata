@@ -57,6 +57,7 @@ end
 
 function Expression:evaluate(input, bindings)
   local env = make_static_frame():create_frame()
+  env.timestamp = os.time() * 1000 -- fixed per evaluation: $now/$millis/$toMillis now-fill share it
   for name, value in pairs(self.assigned) do
     env:bind(name, value)
   end

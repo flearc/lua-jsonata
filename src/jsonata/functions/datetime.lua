@@ -1,6 +1,8 @@
 local V = require("jsonata.value")
 local H = require("jsonata.functions.helpers")
 local FI = require("jsonata.functions.formatinteger")._internal
+local regexlib = require("jsonata.regex")
+local bit = require("bit")
 
 -- ===========================================================================
 -- Faithful port of jsonata-js v2.2.1 datetime.js (fn:format-dateTime side).
@@ -507,6 +509,314 @@ local function format_datetime(millis, picture, timezone)
   return table.concat(result)
 end
 
+-- ===========================================================================
+-- ISO-8601 subset checker + parser (jsonata.js:1311 iso8601regex equivalent)
+-- Accepted: YYYY[-MM[-DD]][THH:MM:SS[.fff]][Z|+/-HH:MM]
+-- ===========================================================================
+
+-- ISO-8601 subset checker, equivalent to jsonata's iso8601regex (jsonata.js:1311):
+-- ^\d{4}(-[01]\d)?(-[0-3]\d)?(T[0-2]\d:[0-5]\d:[0-5]\d)?(\.\d+)?([+-][0-2]\d:?[0-5]\d|Z)?$
+local function is_iso8601(ts)
+  if not ts:match("^%d%d%d%d") then
+    return false
+  end
+  local pos = 5
+  local function take(pat)
+    local s, e = ts:find("^" .. pat, pos)
+    if s then
+      pos = e + 1
+      return true
+    end
+    return false
+  end
+  take("%-[01]%d") -- -MM
+  take("%-[0-3]%d") -- -DD
+  take("T[0-2]%d:[0-5]%d:[0-5]%d") -- THH:MM:SS
+  take("%.%d+") -- .fff
+  local _ = take("Z") or take("[%+%-][0-2]%d:?[0-5]%d") -- tz
+  return pos == #ts + 1
+end
+
+local function parse_iso8601(ts)
+  local year = tonumber(ts:sub(1, 4))
+  local pos = 5
+  local month, day, hour, minute, sec, ms = 1, 1, 0, 0, 0, 0
+  local mm = ts:match("^%-(%d%d)", pos)
+  if mm then
+    month = tonumber(mm)
+    pos = pos + 3
+  end
+  local dd = ts:match("^%-(%d%d)", pos)
+  if dd then
+    day = tonumber(dd)
+    pos = pos + 3
+  end
+  local h, mi, s = ts:match("^T(%d%d):(%d%d):(%d%d)", pos)
+  if h then
+    hour, minute, sec = tonumber(h), tonumber(mi), tonumber(s)
+    pos = pos + 9
+  end
+  local frac = ts:match("^%.(%d+)", pos)
+  if frac then
+    ms = math.floor(tonumber("0." .. frac:sub(1, 3)) * 1000)
+    pos = pos + 1 + #frac
+  end
+  -- Reject out-of-range fields, matching JS Date.parse -> NaN behaviour.
+  -- The loose ISO regex allows month 00-19, day 00-39, hour 00-29, but Date.parse
+  -- returns NaN for month>12, month<1, day>31, day<1, or hour>24 (25+).
+  -- In-range overflows that JS itself rolls (Feb-30, hour-24) must NOT be rejected.
+  if month < 1 or month > 12 or day < 1 or day > 31 or hour > 24 then
+    return 0 / 0 -- NaN, matching JS Date.parse for out-of-range ISO fields
+  end
+  local tzmillis = 0
+  local tz = ts:sub(pos)
+  if tz ~= "" and tz ~= "Z" then
+    local sign, th, tm = tz:match("^([%+%-])(%d%d):?(%d%d)$")
+    if sign then
+      local off = (tonumber(th) * 60 + tonumber(tm)) * 60000
+      tzmillis = (sign == "-") and off or -off -- subtract the offset to reach UTC
+    end
+  end
+  return components_to_millis(year, month - 1, day, hour, minute, sec, ms) + tzmillis
+end
+
+-- ===========================================================================
+-- generate_regex (faithful port of jsonata.js:955-1044 datetime branch)
+-- ===========================================================================
+
+-- Escape PCRE2 metacharacters (jsonata.js:962 /[.*+?^${}()|[\]\\]/g).
+local REGEX_META = {
+  ["."] = true,
+  ["*"] = true,
+  ["+"] = true,
+  ["?"] = true,
+  ["^"] = true,
+  ["$"] = true,
+  ["{"] = true,
+  ["}"] = true,
+  ["("] = true,
+  [")"] = true,
+  ["|"] = true,
+  ["["] = true,
+  ["]"] = true,
+  ["\\"] = true,
+}
+local function escape_regex(s)
+  return (s:gsub(".", function(ch)
+    if REGEX_META[ch] then
+      return "\\" .. ch
+    end
+    return ch
+  end))
+end
+
+local function generate_regex(formatSpec)
+  local parts = {}
+  for _, part in ipairs(formatSpec.parts) do
+    local res = {}
+    if part.type == "literal" then
+      res.regex = escape_regex(part.value)
+    elseif part.component == "Z" or part.component == "z" then
+      -- timezone offset (jsonata.js:963-997)
+      -- jsonata: regular grouping -> {position, character} object; explicit ->
+      -- array of separator objects. Our port mirrors this: the regular case
+      -- carries a `.character` field, the explicit case is a numeric array.
+      local separator
+      local gs = part.integerFormat.groupingSeparators
+      if gs and gs.character ~= nil then
+        separator = gs
+      end
+      res.regex = ""
+      if part.component == "z" then
+        res.regex = "GMT"
+      end
+      res.regex = res.regex .. "[-+][0-9]+"
+      if separator then
+        res.regex = res.regex .. escape_regex(separator.character) .. "[0-9]+"
+      end
+      res.parse = function(value)
+        if part.component == "z" then
+          value = value:sub(4) -- remove the leading GMT
+        end
+        local offsetHours, offsetMinutes = 0, 0
+        if separator then
+          local sepIdx = value:find(separator.character, 1, true)
+          offsetHours = tonumber(value:sub(1, sepIdx - 1))
+          offsetMinutes = tonumber(value:sub(sepIdx + 1))
+        else
+          local numdigits = #value - 1
+          if numdigits <= 2 then
+            offsetHours = tonumber(value)
+          else
+            offsetHours = tonumber(value:sub(1, 3))
+            offsetMinutes = tonumber(value:sub(4))
+          end
+        end
+        return offsetHours * 60 + offsetMinutes
+      end
+    elseif part.component == "f" then
+      res.regex = "[0-9]+"
+      res.parse = function(value)
+        return tonumber("0." .. value:sub(1, 3)) * 1000
+      end
+    elseif part.integerFormat then
+      res.regex = FI.integer_regex(part.integerFormat)
+      res.parse = FI.parser(part.integerFormat)
+    else
+      -- must be a month or day name
+      res.regex = "[a-zA-Z]+"
+      local lookup = {}
+      if part.component == "M" or part.component == "x" then
+        for i = 1, 12 do
+          local name = MONTHS[i]
+          if part.width and part.width.max then
+            lookup[name:sub(1, part.width.max)] = i
+          else
+            lookup[name] = i
+          end
+        end
+      elseif part.component == "F" then
+        for i = 1, 7 do
+          local name = DAYS[i]
+          if part.width and part.width.max then
+            lookup[name:sub(1, part.width.max)] = i
+          else
+            lookup[name] = i
+          end
+        end
+      elseif part.component == "P" then
+        lookup = { am = 0, AM = 0, pm = 1, PM = 1 }
+      else
+        H.err("D3133", { value = part.component })
+      end
+      res.parse = function(value)
+        return lookup[value]
+      end
+    end
+    res.component = part.component
+    parts[#parts + 1] = res
+  end
+  return { parts = parts }
+end
+
+-- ===========================================================================
+-- parse_datetime (faithful port of jsonata.js:1137-1307)
+-- ===========================================================================
+
+local function parse_datetime(timestamp, picture, now_millis)
+  local formatSpec = analyse_datetime_picture(picture)
+  local matchSpec = generate_regex(formatSpec)
+  local full = "^"
+  for _, part in ipairs(matchSpec.parts) do
+    full = full .. "(" .. part.regex .. ")"
+  end
+  full = full .. "$"
+  local caps = regexlib.match_anchored(full, timestamp)
+  if not caps then
+    return V.NOTHING
+  end
+  local components = {}
+  local any = false
+  for i, part in ipairs(matchSpec.parts) do
+    if part.parse then
+      local v = part.parse(caps[i])
+      if v ~= nil then
+        components[part.component] = v
+        any = true
+      end
+    end
+  end
+  if not any then
+    return V.NOTHING
+  end
+  local mask = 0
+  local function shift(b)
+    mask = bit.bor(bit.lshift(mask, 1), (b ~= nil) and 1 or 0)
+  end
+  local function isType(t)
+    return bit.band(bit.bnot(t), mask) == 0 and bit.band(t, mask) ~= 0
+  end
+  for ch in ("YXMxWwdD"):gmatch(".") do
+    shift(components[ch])
+  end
+  local dmA, dmB, dmC, dmD = 161, 130, 84, 72
+  local dateA = isType(dmA)
+  local dateB = (not dateA) and isType(dmB)
+  local dateC = isType(dmC)
+  local dateD = (not dateC) and isType(dmD)
+  mask = 0
+  for ch in ("PHhmsf"):gmatch(".") do
+    shift(components[ch])
+  end
+  local timeA = isType(23)
+  local timeB = (not timeA) and isType(47)
+  local _ = timeA
+  local dateComps = dateB and "YD" or dateC and "XxwF" or dateD and "XWF" or "YMD"
+  local timeComps = timeB and "Phmsf" or "Hmsf"
+  local comps = dateComps .. timeComps
+  local startSpecified, endSpecified = false, false
+  for part in comps:gmatch(".") do
+    if components[part] == nil then
+      if startSpecified then
+        components[part] = (("MDd"):find(part, 1, true)) and 1 or 0
+        endSpecified = true
+      else
+        components[part] = get_datetime_fragment(millis_to_components(now_millis), part)
+      end
+    else
+      startSpecified = true
+      if endSpecified then
+        H.err("D3136", {})
+      end
+    end
+  end
+  if components.M and components.M > 0 then
+    components.M = components.M - 1
+  else
+    components.M = 0
+  end
+  -- JS Date.UTC remaps integer years 0..99 to 1900..1999 (legacy); >=100 literal.
+  -- jsonata's parseDateTime inherits this via its Date.UTC calls.
+  if components.Y ~= nil and components.Y >= 0 and components.Y <= 99 then
+    components.Y = components.Y + 1900
+  end
+  if dateB then
+    local firstJan = components_to_millis(components.Y, 0, 1, 0, 0, 0, 0)
+    local derived = millis_to_components(firstJan + (components.d - 1) * MILLIS_IN_A_DAY)
+    components.M = derived.month0
+    components.D = derived.day
+  end
+  if dateC or dateD then
+    H.err("D3136", {})
+  end
+  if timeB then
+    components.H = (components.h == 12) and 0 or components.h
+    if components.P == 1 then
+      components.H = components.H + 12
+    end
+  end
+  local millis = components_to_millis(components.Y, components.M, components.D, components.H, components.m, components.s, components.f)
+  local tz = components.Z or components.z
+  if tz then
+    millis = millis - tz * 60000
+  end
+  return millis
+end
+
+-- The fixed per-evaluation timestamp lives as `.timestamp` on the top evaluation
+-- frame (set in init.lua). The env threaded to a wants_env builtin may be a child
+-- frame, so walk the enclosing chain. Falls back to live os.time() for direct
+-- unit calls (no env / no timestamp anywhere up the chain).
+local function env_now(env)
+  while env do
+    if env.timestamp then
+      return env.timestamp
+    end
+    env = env.enclosing
+  end
+  return os.time() * 1000
+end
+
 local R = {}
 
 R.fromMillis = H.def(function(millis, picture, timezone)
@@ -515,6 +825,48 @@ R.fromMillis = H.def(function(millis, picture, timezone)
   end
   return format_datetime(millis, picture, timezone)
 end, 1, 3, "<n-s?s?:s>")
+
+-- wants_env: M.apply prepends (env, input) ahead of the validated args.
+-- Build the def manually (like $eval) so the signature validates the user args
+-- while the env+input are threaded for the shared per-evaluation timestamp.
+R.toMillis = {
+  _jsonata_function = true,
+  impl = function(env, input, timestamp, picture)
+    if V.is_nothing(timestamp) then
+      return V.NOTHING
+    end
+    if picture == nil or V.is_nothing(picture) then
+      if not is_iso8601(timestamp) then
+        H.err("D3110", { value = timestamp })
+      end
+      return parse_iso8601(timestamp)
+    end
+    return parse_datetime(timestamp, picture, env_now(env))
+  end,
+  arity = 1,
+  signature = require("jsonata.signature").parse("<s-s?:n>"),
+  wants_env = true,
+}
+
+R.millis = {
+  _jsonata_function = true,
+  impl = function(env, input)
+    return env_now(env)
+  end,
+  arity = 0,
+  signature = require("jsonata.signature").parse("<:n>"),
+  wants_env = true,
+}
+
+R.now = {
+  _jsonata_function = true,
+  impl = function(env, input, picture, timezone)
+    return format_datetime(env_now(env), picture, timezone)
+  end,
+  arity = 0,
+  signature = require("jsonata.signature").parse("<s?s?:s>"),
+  wants_env = true,
+}
 
 R._internal = {
   calendar = calendar,

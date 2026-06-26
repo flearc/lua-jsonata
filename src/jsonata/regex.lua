@@ -58,4 +58,21 @@ function M.first(matcher, str, from)
   }
 end
 
+-- Case-insensitive anchored full match. `source` includes its own ^...$.
+-- Returns the captures array (false normalized to V.NULL) or nil.
+function M.match_anchored(source, str)
+  local matcher = M.compile(source, "i")
+  local st, en, caps = matcher:tfind(str)
+  if not st or st ~= 1 or en ~= #str then
+    return nil
+  end
+  caps = caps or {}
+  for i = 1, #caps do
+    if caps[i] == false then
+      caps[i] = V.NULL
+    end
+  end
+  return caps
+end
+
 return M
