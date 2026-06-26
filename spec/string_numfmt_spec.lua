@@ -38,3 +38,19 @@ describe("$string number formatting (thresholds)", function()
     assert.are.equal("1e+100", run("$string(1e100)"))
   end)
 end)
+
+describe("toPrecision(15) rounds half away from zero (JS), not half-even", function()
+  local cases = {
+    { "572242133073302.5", "572242133073303" },
+    { "-800411785470156.5", "-800411785470157" },
+    { "-28093361853.90625", "-28093361853.9063" },
+    { "0.1+0.2", "0.3" }, -- still works (non-tie)
+    { "22/7", "3.14285714285714" }, -- still works
+    { "5e-324", "5e-324" }, -- denormal still works (no FP-scaling overflow)
+  }
+  for _, c in ipairs(cases) do
+    it("$string(" .. c[1] .. ") = " .. c[2], function()
+      assert.are.equal(c[2], run("$string(" .. c[1] .. ")"))
+    end)
+  end
+end)

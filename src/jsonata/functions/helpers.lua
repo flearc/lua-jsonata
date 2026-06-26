@@ -72,46 +72,10 @@ local function truthy(x)
 end
 H.truthy = truthy
 
--- Faithful port of the ECMAScript Number::toString algorithm: shortest round-trip
--- significant digits, then JS's fixed-vs-exponential thresholds (fixed when
--- -6 < n <= 21, else e+N/e-N). Non-integer values are first rounded to 15
--- significant digits (JS JSONata's toPrecision(15) step) to suppress FP noise
--- (e.g. $sum rounding errors). Integer-valued inputs bypass rounding so that
--- $formatInteger/$formatNumber/$formatBase/$round are unaffected.
-function H.num_to_str(x)
-  if x ~= x then
-    return "NaN"
-  end
-  if x == math.huge then
-    return "Infinity"
-  end
-  if x == -math.huge then
-    return "-Infinity"
-  end
-  if x == 0 then
-    return "0" -- also covers -0 (0 == -0 in Lua)
-  end
-  local neg = x < 0
-  local a = math.abs(x)
-  -- toPrecision(15): suppress FP accumulation noise for non-integer values,
-  -- matching JSONata JS's JSON.stringify replacer behaviour.
-  if a ~= math.floor(a) then
-    a = tonumber(string.format("%.15g", a))
-  end
-  local digits, e10
-  for p = 0, 16 do
-    local s = string.format("%." .. p .. "e", a) -- "D.DDDe±XX" (or "De±XX" for p=0)
-    if tonumber(s) == a then
-      local mant, exp = s:match("^(%d[%.%d]*)[eE]([%+%-]%d+)$")
-      mant = mant:gsub("%.", ""):gsub("0+$", "")
-      if mant == "" then
-        mant = "0"
-      end
-      digits = mant
-      e10 = tonumber(exp)
-      break
-    end
-  end
+-- Format a (digits_str, exponent) pair using ECMAScript Number::toString thresholds.
+-- digits is a string of significant digits with no trailing zeros; e10 is the
+-- base-10 exponent of the leading digit (so the value is digits * 10^(e10-k+1)).
+local function format_digits(digits, e10, neg)
   local k = #digits
   local n = e10 + 1
   local out
@@ -130,6 +94,95 @@ function H.num_to_str(x)
     out = m .. "e" .. (ee >= 0 and "+" or "-") .. math.abs(ee)
   end
   return neg and ("-" .. out) or out
+end
+
+-- Round a digit string (all significant digits, no trailing zeros) to 15 digits,
+-- half-away-from-zero, using carry propagation. Returns (new_digits, new_exp).
+-- exp is the base-10 exponent of the leading digit.
+-- Only call when #digits > 15 (caller must ensure this).
+local function round15_digits(digits, exp)
+  local keep = digits:sub(1, 15)
+  local d16 = tonumber(digits:sub(16, 16)) or 0
+  if d16 >= 5 then
+    -- Increment via carry propagation (pure digit-string, no float arithmetic)
+    local chars = {}
+    for i = 1, #keep do
+      chars[i] = keep:byte(i) - 48
+    end -- '0'=48
+    local carry = 1
+    for i = #chars, 1, -1 do
+      local d = chars[i] + carry
+      if d >= 10 then
+        chars[i] = d - 10
+        carry = 1
+      else
+        chars[i] = d
+        carry = 0
+        break
+      end
+    end
+    local s = ""
+    if carry == 1 then
+      s = "1"
+      exp = exp + 1
+    end
+    for i = 1, #chars do
+      s = s .. chars[i]
+    end
+    keep = s
+  end
+  keep = keep:gsub("0+$", "")
+  if keep == "" then
+    keep = "0"
+  end
+  return keep, exp
+end
+
+-- Faithful port of the ECMAScript Number::toString algorithm: shortest round-trip
+-- significant digits, then JS's fixed-vs-exponential thresholds (fixed when
+-- -6 < n <= 21, else e+N/e-N). Non-integer values are first rounded to 15
+-- significant digits (JS JSONata's toPrecision(15) step) to suppress FP noise
+-- (e.g. $sum rounding errors), using half-away-from-zero (JS semantics, not C's
+-- half-to-even). Integer-valued inputs bypass rounding so that
+-- $formatInteger/$formatNumber/$formatBase/$round are unaffected.
+function H.num_to_str(x)
+  if x ~= x then
+    return "NaN"
+  end
+  if x == math.huge then
+    return "Infinity"
+  end
+  if x == -math.huge then
+    return "-Infinity"
+  end
+  if x == 0 then
+    return "0" -- also covers -0 (0 == -0 in Lua)
+  end
+  local neg = x < 0
+  local a = math.abs(x)
+  -- Find shortest round-trip digit string for a.
+  local digits, e10
+  for p = 0, 16 do
+    local s = string.format("%." .. p .. "e", a)
+    if tonumber(s) == a then
+      local mant, exp = s:match("^(%d[%.%d]*)[eE]([%+%-]%d+)$")
+      mant = mant:gsub("%.", ""):gsub("0+$", "")
+      if mant == "" then
+        mant = "0"
+      end
+      digits = mant
+      e10 = tonumber(exp)
+      break
+    end
+  end
+  -- toPrecision(15): for non-integer values with more than 15 significant digits
+  -- in their shortest representation, round to 15 sig digits half-away-from-zero
+  -- (JS semantics). Values with <= 15 digits already satisfy toPrecision(15)
+  -- exactly (same float), so no rounding is needed and we keep the shorter form.
+  if a ~= math.floor(a) and #digits > 15 then
+    digits, e10 = round15_digits(digits, e10)
+  end
+  return format_digits(digits, e10, neg)
 end
 
 -- Split a UTF-8 string into an array of single-codepoint substrings.
