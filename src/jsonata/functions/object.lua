@@ -27,6 +27,8 @@ R.keys = H.def(function(x)
   end
   if #out == 0 then
     return V.NOTHING
+  elseif #out == 1 then
+    return out[1]
   end
   return out
 end, 1, 1, "<x-:a<s>>")
