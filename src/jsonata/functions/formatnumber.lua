@@ -135,36 +135,6 @@ local function slice(cs, a, b)
   return substring(cs, a, b)
 end
 
--- Codepoint of the first character of a single-char string (UTF-8 decode).
-local function codepoint(ch)
-  local b1 = ch:byte(1)
-  if not b1 then
-    return 0
-  end
-  if b1 < 0x80 then
-    return b1
-  elseif b1 < 0xE0 then
-    return (b1 - 0xC0) * 0x40 + (ch:byte(2) - 0x80)
-  elseif b1 < 0xF0 then
-    return (b1 - 0xE0) * 0x1000 + (ch:byte(2) - 0x80) * 0x40 + (ch:byte(3) - 0x80)
-  else
-    return (b1 - 0xF0) * 0x40000 + (ch:byte(2) - 0x80) * 0x1000 + (ch:byte(3) - 0x80) * 0x40 + (ch:byte(4) - 0x80)
-  end
-end
-
--- UTF-8 encode a codepoint -> string.
-local function from_codepoint(cp)
-  if cp < 0x80 then
-    return string.char(cp)
-  elseif cp < 0x800 then
-    return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + (cp % 0x40))
-  elseif cp < 0x10000 then
-    return string.char(0xE0 + math.floor(cp / 0x1000), 0x80 + (math.floor(cp / 0x40) % 0x40), 0x80 + (cp % 0x40))
-  else
-    return string.char(0xF0 + math.floor(cp / 0x40000), 0x80 + (math.floor(cp / 0x1000) % 0x40), 0x80 + (math.floor(cp / 0x40) % 0x40), 0x80 + (cp % 0x40))
-  end
-end
-
 R.formatNumber = H.def(function(value, picture, options)
   -- undefined inputs always return undefined
   if V.is_nothing(value) then
@@ -179,7 +149,7 @@ R.formatNumber = H.def(function(value, picture, options)
     ["minus-sign"] = "-",
     ["NaN"] = "NaN",
     ["percent"] = "%",
-    ["per-mille"] = from_codepoint(0x2030),
+    ["per-mille"] = H.from_codepoint(0x2030),
     ["zero-digit"] = "0",
     ["digit"] = "#",
     ["pattern-separator"] = ";",
@@ -193,9 +163,9 @@ R.formatNumber = H.def(function(value, picture, options)
   end
 
   local decimalDigitFamily = {}
-  local zeroCharCode = codepoint(properties["zero-digit"])
+  local zeroCharCode = H.codepoint(properties["zero-digit"])
   for ii = zeroCharCode, zeroCharCode + 9 do
-    decimalDigitFamily[#decimalDigitFamily + 1] = from_codepoint(ii)
+    decimalDigitFamily[#decimalDigitFamily + 1] = H.from_codepoint(ii)
   end
 
   local activeChars = {}

@@ -104,6 +104,36 @@ function H.utf8_len(s)
   return #H.utf8_chars(s)
 end
 
+-- UTF-8 decode a single-codepoint character string -> codepoint number.
+function H.codepoint(ch)
+  local b1 = ch:byte(1)
+  if not b1 then
+    return nil
+  end
+  if b1 < 0x80 then
+    return b1
+  elseif b1 < 0xE0 then
+    return (b1 - 0xC0) * 0x40 + (ch:byte(2) - 0x80)
+  elseif b1 < 0xF0 then
+    return (b1 - 0xE0) * 0x1000 + (ch:byte(2) - 0x80) * 0x40 + (ch:byte(3) - 0x80)
+  else
+    return (b1 - 0xF0) * 0x40000 + (ch:byte(2) - 0x80) * 0x1000 + (ch:byte(3) - 0x80) * 0x40 + (ch:byte(4) - 0x80)
+  end
+end
+
+-- UTF-8 encode a codepoint number -> string.
+function H.from_codepoint(cp)
+  if cp < 0x80 then
+    return string.char(cp)
+  elseif cp < 0x800 then
+    return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + (cp % 0x40))
+  elseif cp < 0x10000 then
+    return string.char(0xE0 + math.floor(cp / 0x1000), 0x80 + (math.floor(cp / 0x40) % 0x40), 0x80 + (cp % 0x40))
+  else
+    return string.char(0xF0 + math.floor(cp / 0x40000), 0x80 + (math.floor(cp / 0x1000) % 0x40), 0x80 + (math.floor(cp / 0x40) % 0x40), 0x80 + (cp % 0x40))
+  end
+end
+
 -- Raise a JSONata runtime error.
 function H.err(code, info)
   errors.raise(code, info or {})
