@@ -189,15 +189,38 @@ function M.eval_variable(node, input, env)
   return v
 end
 
--- Build a fresh sequence, appending elements with flattening rules.
-local function append_flat(seq, value)
+-- Build a fresh sequence, appending elements with path-shape rules.
+local function append_path_value(seq, value, opts)
+  opts = opts or {}
   if V.is_nothing(value) then
+    return
+  end
+  if opts.keep_array then
+    seq[#seq + 1] = value
     return
   end
   if V.is_array(value) and not V.get_flag(value, "cons") then
     for i = 1, #value do
       seq[#seq + 1] = value[i]
     end
+  else
+    seq[#seq + 1] = value
+  end
+end
+
+local function append_flat(seq, value)
+  append_path_value(seq, value)
+end
+
+local function append_constructor_value(seq, value, has_following_step)
+  if V.is_nothing(value) then
+    return
+  end
+  if has_following_step and V.is_array(value) then
+    for i = 1, #value do
+      seq[#seq + 1] = value[i]
+    end
+    return
   else
     seq[#seq + 1] = value
   end
