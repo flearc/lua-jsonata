@@ -68,6 +68,131 @@ local calendar = {
   components_to_millis = components_to_millis,
 }
 
+-- ===========================================================================
+-- ISO-week helpers (faithful port of jsonata.js:651-824)
+-- First week = the week containing the first Thursday; weeks start Monday.
+-- ===========================================================================
+
+local function start_of_first_week(year, month0)
+  local jan1 = components_to_millis(year, month0, 1, 0, 0, 0, 0)
+  local dow = millis_to_components(jan1).weekday
+  if dow == 0 then
+    dow = 7
+  end
+  if dow > 4 then
+    return jan1 + (8 - dow) * MILLIS_IN_A_DAY
+  else
+    return jan1 - (dow - 1) * MILLIS_IN_A_DAY
+  end
+end
+
+local function delta_weeks(start, finish)
+  return (finish - start) / (MILLIS_IN_A_DAY * 7) + 1
+end
+
+local function next_month(y, m0)
+  if m0 == 11 then
+    return y + 1, 0
+  else
+    return y, m0 + 1
+  end
+end
+local function prev_month(y, m0)
+  if m0 == 0 then
+    return y - 1, 11
+  else
+    return y, m0 - 1
+  end
+end
+
+local function get_datetime_fragment(comp, component)
+  if component == "Y" then
+    return comp.year
+  elseif component == "M" then
+    return comp.month0 + 1
+  elseif component == "D" then
+    return comp.day
+  elseif component == "d" then
+    local today = components_to_millis(comp.year, comp.month0, comp.day, 0, 0, 0, 0)
+    local firstJan = components_to_millis(comp.year, 0, 1, 0, 0, 0, 0)
+    return (today - firstJan) / MILLIS_IN_A_DAY + 1
+  elseif component == "F" then
+    local v = comp.weekday
+    if v == 0 then
+      v = 7
+    end
+    return v
+  elseif component == "W" then
+    local start1 = start_of_first_week(comp.year, 0)
+    local today = components_to_millis(comp.year, comp.month0, comp.day, 0, 0, 0, 0)
+    local week = delta_weeks(start1, today)
+    if week > 52 then
+      if today >= start_of_first_week(comp.year + 1, 0) then
+        week = 1
+      end
+    elseif week < 1 then
+      week = delta_weeks(start_of_first_week(comp.year - 1, 0), today)
+    end
+    return math.floor(week)
+  elseif component == "w" then
+    local start1 = start_of_first_week(comp.year, comp.month0)
+    local today = components_to_millis(comp.year, comp.month0, comp.day, 0, 0, 0, 0)
+    local week = delta_weeks(start1, today)
+    if week > 4 then
+      local ny, nm = next_month(comp.year, comp.month0)
+      if today >= start_of_first_week(ny, nm) then
+        week = 1
+      end
+    elseif week < 1 then
+      local py, pm = prev_month(comp.year, comp.month0)
+      week = delta_weeks(start_of_first_week(py, pm), today)
+    end
+    return math.floor(week)
+  elseif component == "X" then
+    local start = start_of_first_week(comp.year, 0)
+    local finish = start_of_first_week(comp.year + 1, 0)
+    local now = components_to_millis(comp.year, comp.month0, comp.day, comp.hours, comp.minutes, comp.seconds, comp.ms)
+    if now < start then
+      return comp.year - 1
+    elseif now >= finish then
+      return comp.year + 1
+    else
+      return comp.year
+    end
+  elseif component == "x" then
+    local start = start_of_first_week(comp.year, comp.month0)
+    local ny, nm = next_month(comp.year, comp.month0)
+    local finish = start_of_first_week(ny, nm)
+    local now = components_to_millis(comp.year, comp.month0, comp.day, comp.hours, comp.minutes, comp.seconds, comp.ms)
+    if now < start then
+      local _, pm = prev_month(comp.year, comp.month0)
+      return pm + 1
+    elseif now >= finish then
+      return nm + 1
+    else
+      return comp.month0 + 1
+    end
+  elseif component == "H" then
+    return comp.hours
+  elseif component == "h" then
+    local v = comp.hours % 12
+    if v == 0 then
+      v = 12
+    end
+    return v
+  elseif component == "P" then
+    return comp.hours >= 12 and "pm" or "am"
+  elseif component == "m" then
+    return comp.minutes
+  elseif component == "s" then
+    return comp.seconds
+  elseif component == "f" then
+    return comp.ms
+  elseif component == "C" or component == "E" then
+    return "ISO"
+  end
+end
+
 local R = {}
-R._internal = { calendar = calendar }
+R._internal = { calendar = calendar, get_datetime_fragment = get_datetime_fragment }
 return R

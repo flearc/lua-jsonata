@@ -64,3 +64,52 @@ describe("M8c-1: calendar millis<->components", function()
     assert.are.equal(1, c2.day)
   end)
 end)
+
+describe("M8c-1: get_datetime_fragment", function()
+  local frag = dt._internal.get_datetime_fragment
+  local c = cal.millis_to_components(1521801216617) -- 2018-03-23T10:33:36.617 Fri
+  it("basic components", function()
+    assert.are.equal(2018, frag(c, "Y"))
+    assert.are.equal(3, frag(c, "M"))
+    assert.are.equal(23, frag(c, "D"))
+    assert.are.equal(10, frag(c, "H"))
+    assert.are.equal(33, frag(c, "m"))
+    assert.are.equal(36, frag(c, "s"))
+    assert.are.equal(617, frag(c, "f"))
+    assert.are.equal(5, frag(c, "F"))
+    assert.are.equal(10, frag(c, "h"))
+    assert.are.equal("am", frag(c, "P"))
+    assert.are.equal(82, frag(c, "d"))
+  end)
+  it("12h + pm", function()
+    local pm = cal.millis_to_components(cal.components_to_millis(2018, 0, 1, 13, 0, 0, 0))
+    assert.are.equal(1, frag(pm, "h"))
+    assert.are.equal("pm", frag(pm, "P"))
+    local mid = cal.millis_to_components(cal.components_to_millis(2018, 0, 1, 0, 0, 0, 0))
+    assert.are.equal(12, frag(mid, "h"))
+  end)
+end)
+
+describe("M8c-1: ISO week math (literal millis, no toMillis)", function()
+  local frag = dt._internal.get_datetime_fragment
+  local function wk(ms)
+    local c = cal.millis_to_components(ms)
+    return frag(c, "X"), frag(c, "W"), frag(c, "F")
+  end
+  it("ISO week boundaries", function()
+    local x, w, f = wk(1104537600000)
+    assert.are.same({ 2004, 53, 6 }, { x, w, f }) -- 2005-01-01
+    x, w, f = wk(1136160000000)
+    assert.are.same({ 2006, 1, 1 }, { x, w, f }) -- 2006-01-02
+    x, w, f = wk(1167609600000)
+    assert.are.same({ 2007, 1, 1 }, { x, w, f }) -- 2007-01-01
+    x, w, f = wk(1199059200000)
+    assert.are.same({ 2008, 1, 1 }, { x, w, f }) -- 2007-12-31
+    x, w, f = wk(1230508800000)
+    assert.are.same({ 2009, 1, 1 }, { x, w, f }) -- 2008-12-29
+    x, w, f = wk(1262217600000)
+    assert.are.same({ 2009, 53, 4 }, { x, w, f }) -- 2009-12-31
+    x, w, f = wk(1262476800000)
+    assert.are.same({ 2009, 53, 7 }, { x, w, f }) -- 2010-01-03
+  end)
+end)
