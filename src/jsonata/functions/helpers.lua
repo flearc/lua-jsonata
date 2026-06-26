@@ -332,7 +332,7 @@ function H.serialize(x, indent, depth)
   depth = depth or 0
   local V = require("jsonata.value")
   if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
-    return ""
+    return '""'
   end
   if V.is_null(x) then
     return "null"
@@ -375,8 +375,7 @@ function H.serialize(x, indent, depth)
       local kvs = {}
       for _, k in ipairs(keys) do
         local val = V.obj_get(x, k)
-        local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
-        if not is_fn and not V.is_nothing(val) then
+        if not V.is_nothing(val) then
           kvs[#kvs + 1] = '"' .. json_escape(k) .. '": ' .. H.serialize(val, indent, depth + 1)
         end
       end
@@ -390,8 +389,7 @@ function H.serialize(x, indent, depth)
       local parts = {}
       for _, k in ipairs(V.obj_keys(x)) do
         local val = V.obj_get(x, k)
-        local is_fn = type(val) == "table" and (val._jsonata_function or val._jsonata_lambda)
-        if not is_fn and not V.is_nothing(val) then
+        if not V.is_nothing(val) then
           parts[#parts + 1] = '"' .. json_escape(k) .. '":' .. H.serialize(val)
         end
       end
