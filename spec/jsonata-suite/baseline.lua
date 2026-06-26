@@ -665,6 +665,7 @@ return {
   ["function-length/case001"] = true,
   ["function-length/case002"] = true,
   ["function-length/case003"] = true,
+  ["function-length/case004"] = true,
   ["function-length/case005"] = true,
   ["function-length/case006"] = true,
   ["function-length/case007"] = true,

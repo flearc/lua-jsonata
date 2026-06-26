@@ -30,6 +30,22 @@ local ESCAPES = {
   ["/"] = "/",
 }
 
+local function utf8_from_codepoint(code)
+  if code < 0x80 then
+    return string.char(code)
+  elseif code < 0x800 then
+    return string.char(0xC0 + math.floor(code / 0x40), 0x80 + (code % 0x40))
+  elseif code < 0x10000 then
+    return string.char(0xE0 + math.floor(code / 0x1000), 0x80 + (math.floor(code / 0x40) % 0x40), 0x80 + (code % 0x40))
+  end
+  return string.char(
+    0xF0 + math.floor(code / 0x40000),
+    0x80 + (math.floor(code / 0x1000) % 0x40),
+    0x80 + (math.floor(code / 0x40) % 0x40),
+    0x80 + (code % 0x40)
+  )
+end
+
 function M.new(source)
   return setmetatable({ src = source, pos = 1, len = #source, _prev = nil }, Tokenizer)
 end
@@ -63,15 +79,16 @@ function Tokenizer:_read_string(quote)
         if not code then
           errors.raise("S0201", { position = self.pos, token = "\\u" })
         end
-        -- Encode the code point as UTF-8 (BMP-only handling is sufficient for M1).
-        if code < 0x80 then
-          buf[#buf + 1] = string.char(code)
-        elseif code < 0x800 then
-          buf[#buf + 1] = string.char(0xC0 + math.floor(code / 0x40), 0x80 + (code % 0x40))
-        else
-          buf[#buf + 1] = string.char(0xE0 + math.floor(code / 0x1000), 0x80 + (math.floor(code / 0x40) % 0x40), 0x80 + (code % 0x40))
+        local width = 6
+        if code >= 0xD800 and code <= 0xDBFF and self.src:sub(self.pos + 6, self.pos + 7) == "\\u" then
+          local low = tonumber(self.src:sub(self.pos + 8, self.pos + 11), 16)
+          if low and low >= 0xDC00 and low <= 0xDFFF then
+            code = 0x10000 + (code - 0xD800) * 0x400 + (low - 0xDC00)
+            width = 12
+          end
         end
-        self.pos = self.pos + 6
+        buf[#buf + 1] = utf8_from_codepoint(code)
+        self.pos = self.pos + width
       elseif ESCAPES[nxt] then
         buf[#buf + 1] = ESCAPES[nxt]
         self.pos = self.pos + 2
