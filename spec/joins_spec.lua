@@ -259,6 +259,93 @@ describe("M6f: ordered stages on root/sort tuple steps", function()
   end)
 end)
 
+describe("M6g: flat tuple-stage library joins", function()
+  local LIBRARY = dataset("library")
+
+  it("library-joins/7 indexes the global matched join stream", function()
+    local res = run(
+      [[
+library.loans@$l#$il.books@$b#$ib[$l.isbn=$b.isbn]#$ib2.customers@$c#$ic[$l.customer=$c.id].{
+  'title': $b.title,
+  'customer': $l.customer,
+  'name': $c.name,
+  'loan-index': $il,
+  'book-index': $ib,
+  'customer-index': $ic,
+  'ib2': $ib2
+}
+]],
+      LIBRARY
+    )
+
+    assert.are.same({
+      {
+        title = "Structure and Interpretation of Computer Programs",
+        customer = "10001",
+        name = "Joe Doe",
+        ["loan-index"] = 0,
+        ["book-index"] = 0,
+        ["customer-index"] = 0,
+        ib2 = 0,
+      },
+      {
+        title = "Compilers: Principles, Techniques, and Tools",
+        customer = "10003",
+        name = "Jason Arthur",
+        ["loan-index"] = 1,
+        ["book-index"] = 3,
+        ["customer-index"] = 2,
+        ib2 = 1,
+      },
+      {
+        title = "Structure and Interpretation of Computer Programs",
+        customer = "10003",
+        name = "Jason Arthur",
+        ["loan-index"] = 2,
+        ["book-index"] = 0,
+        ["customer-index"] = 2,
+        ib2 = 2,
+      },
+    }, res)
+  end)
+
+  it("library-joins/8 applies [1] to the global matched join stream", function()
+    local res = run(
+      [[
+library.loans@$l.books@$b[$l.isbn=$b.isbn][1].{
+  'title': $b.title,
+  'customer': $l.customer
+}
+]],
+      LIBRARY
+    )
+
+    assert.are.same({
+      title = "Compilers: Principles, Techniques, and Tools",
+      customer = "10003",
+    }, res)
+  end)
+
+  it("library-joins/10 applies [1][] to the global matched join stream", function()
+    local res = run(
+      [[
+library.loans@$l.books@$b[$l.isbn=$b.isbn][1][].{
+  'title': $b.title,
+  'customer': $l.customer
+}
+]],
+      LIBRARY
+    )
+
+    assert.are.same({
+      {
+        title = "Compilers: Principles, Techniques, and Tools",
+        customer = "10003",
+      },
+    }, res)
+  end)
+end)
+
 describe("M6f: sort index binds only on a raw (not tuple-bound) stream", function()
   local NUMS = { 3, 1, 4, 1, 5, 9 }
   it("sort-on-raw binds the index (index/6 still works)", function()
