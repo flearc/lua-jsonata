@@ -10,9 +10,14 @@ local FI = require("jsonata.functions.formatinteger")._internal
 
 local MILLIS_IN_A_DAY = 86400000
 
+-- integer division truncating toward zero (C-style), as Hinnant's era math requires
+local function itrunc(x)
+  return x >= 0 and math.floor(x) or math.ceil(x)
+end
+
 local function days_from_civil(y, m, d)
   y = (m <= 2) and (y - 1) or y
-  local era = math.floor((y >= 0 and y or (y - 399)) / 400)
+  local era = itrunc((y >= 0 and y or (y - 399)) / 400)
   local yoe = y - era * 400
   local mp = (m > 2) and (m - 3) or (m + 9)
   local doy = math.floor((153 * mp + 2) / 5) + d - 1
@@ -22,7 +27,7 @@ end
 
 local function civil_from_days(z)
   z = z + 719468
-  local era = math.floor((z >= 0 and z or (z - 146096)) / 146097)
+  local era = itrunc((z >= 0 and z or (z - 146096)) / 146097)
   local doe = z - era * 146097
   local yoe = math.floor((doe - math.floor(doe / 1460) + math.floor(doe / 36524) - math.floor(doe / 146096)) / 365)
   local y = yoe + era * 400
