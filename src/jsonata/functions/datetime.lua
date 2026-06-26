@@ -796,6 +796,20 @@ local function parse_datetime(timestamp, picture, now_millis)
   return millis
 end
 
+-- The fixed per-evaluation timestamp lives as `.timestamp` on the top evaluation
+-- frame (set in init.lua). The env threaded to a wants_env builtin may be a child
+-- frame, so walk the enclosing chain. Falls back to live os.time() for direct
+-- unit calls (no env / no timestamp anywhere up the chain).
+local function env_now(env)
+  while env do
+    if env.timestamp then
+      return env.timestamp
+    end
+    env = env.enclosing
+  end
+  return os.time() * 1000
+end
+
 local R = {}
 
 R.fromMillis = H.def(function(millis, picture, timezone)
@@ -805,18 +819,47 @@ R.fromMillis = H.def(function(millis, picture, timezone)
   return format_datetime(millis, picture, timezone)
 end, 1, 3, "<n-s?s?:s>")
 
-R.toMillis = H.def(function(timestamp, picture)
-  if V.is_nothing(timestamp) then
-    return V.NOTHING
-  end
-  if picture == nil or V.is_nothing(picture) then
-    if not is_iso8601(timestamp) then
-      H.err("D3110", { value = timestamp })
+-- wants_env: M.apply prepends (env, input) ahead of the validated args.
+-- Build the def manually (like $eval) so the signature validates the user args
+-- while the env+input are threaded for the shared per-evaluation timestamp.
+R.toMillis = {
+  _jsonata_function = true,
+  impl = function(env, input, timestamp, picture)
+    if V.is_nothing(timestamp) then
+      return V.NOTHING
     end
-    return parse_iso8601(timestamp)
-  end
-  return parse_datetime(timestamp, picture, os.time() * 1000)
-end, 1, 2, "<s-s?:n>")
+    if picture == nil or V.is_nothing(picture) then
+      if not is_iso8601(timestamp) then
+        H.err("D3110", { value = timestamp })
+      end
+      return parse_iso8601(timestamp)
+    end
+    return parse_datetime(timestamp, picture, env_now(env))
+  end,
+  arity = 1,
+  signature = require("jsonata.signature").parse("<s-s?:n>"),
+  wants_env = true,
+}
+
+R.millis = {
+  _jsonata_function = true,
+  impl = function(env, input)
+    return env_now(env)
+  end,
+  arity = 0,
+  signature = require("jsonata.signature").parse("<:n>"),
+  wants_env = true,
+}
+
+R.now = {
+  _jsonata_function = true,
+  impl = function(env, input, picture, timezone)
+    return format_datetime(env_now(env), picture, timezone)
+  end,
+  arity = 0,
+  signature = require("jsonata.signature").parse("<s?s?:s>"),
+  wants_env = true,
+}
 
 R._internal = {
   calendar = calendar,
