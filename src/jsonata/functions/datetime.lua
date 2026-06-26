@@ -507,6 +507,70 @@ local function format_datetime(millis, picture, timezone)
   return table.concat(result)
 end
 
+-- ===========================================================================
+-- ISO-8601 subset checker + parser (jsonata.js:1311 iso8601regex equivalent)
+-- Accepted: YYYY[-MM[-DD]][THH:MM:SS[.fff]][Z|+/-HH:MM]
+-- ===========================================================================
+
+-- ISO-8601 subset checker, equivalent to jsonata's iso8601regex (jsonata.js:1311):
+-- ^\d{4}(-[01]\d)?(-[0-3]\d)?(T[0-2]\d:[0-5]\d:[0-5]\d)?(\.\d+)?([+-][0-2]\d:?[0-5]\d|Z)?$
+local function is_iso8601(ts)
+  if not ts:match("^%d%d%d%d") then
+    return false
+  end
+  local pos = 5
+  local function take(pat)
+    local s, e = ts:find("^" .. pat, pos)
+    if s then
+      pos = e + 1
+      return true
+    end
+    return false
+  end
+  take("%-[01]%d") -- -MM
+  take("%-[0-3]%d") -- -DD
+  take("T[0-2]%d:[0-5]%d:[0-5]%d") -- THH:MM:SS
+  take("%.%d+") -- .fff
+  local _ = take("Z") or take("[%+%-][0-2]%d:?[0-5]%d") -- tz
+  return pos == #ts + 1
+end
+
+local function parse_iso8601(ts)
+  local year = tonumber(ts:sub(1, 4))
+  local pos = 5
+  local month, day, hour, minute, sec, ms = 1, 1, 0, 0, 0, 0
+  local mm = ts:match("^%-(%d%d)", pos)
+  if mm then
+    month = tonumber(mm)
+    pos = pos + 3
+  end
+  local dd = ts:match("^%-(%d%d)", pos)
+  if dd then
+    day = tonumber(dd)
+    pos = pos + 3
+  end
+  local h, mi, s = ts:match("^T(%d%d):(%d%d):(%d%d)", pos)
+  if h then
+    hour, minute, sec = tonumber(h), tonumber(mi), tonumber(s)
+    pos = pos + 9
+  end
+  local frac = ts:match("^%.(%d+)", pos)
+  if frac then
+    ms = math.floor(tonumber("0." .. frac) * 1000 + 0.5)
+    pos = pos + 1 + #frac
+  end
+  local tzmillis = 0
+  local tz = ts:sub(pos)
+  if tz ~= "" and tz ~= "Z" then
+    local sign, th, tm = tz:match("^([%+%-])(%d%d):?(%d%d)$")
+    if sign then
+      local off = (tonumber(th) * 60 + tonumber(tm)) * 60000
+      tzmillis = (sign == "-") and off or -off -- subtract the offset to reach UTC
+    end
+  end
+  return components_to_millis(year, month - 1, day, hour, minute, sec, ms) + tzmillis
+end
+
 local R = {}
 
 R.fromMillis = H.def(function(millis, picture, timezone)
@@ -515,6 +579,19 @@ R.fromMillis = H.def(function(millis, picture, timezone)
   end
   return format_datetime(millis, picture, timezone)
 end, 1, 3, "<n-s?s?:s>")
+
+R.toMillis = H.def(function(timestamp, picture)
+  if V.is_nothing(timestamp) then
+    return V.NOTHING
+  end
+  if picture == nil or V.is_nothing(picture) then
+    if not is_iso8601(timestamp) then
+      H.err("D3110", { value = timestamp })
+    end
+    return parse_iso8601(timestamp)
+  end
+  H.err("D3136", {}) -- picture branch implemented in Task 2
+end, 1, 2, "<s-s?:n>")
 
 R._internal = {
   calendar = calendar,
