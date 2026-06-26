@@ -657,6 +657,7 @@ return {
   ["function-keys/case000"] = true,
   ["function-keys/case001"] = true,
   ["function-keys/case002"] = true,
+  ["function-keys/case003"] = true,
   ["function-keys/case004"] = true,
   ["function-keys/case005"] = true,
   ["function-keys/case006"] = true,
