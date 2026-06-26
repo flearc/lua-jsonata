@@ -768,6 +768,11 @@ local function parse_datetime(timestamp, picture, now_millis)
   else
     components.M = 0
   end
+  -- JS Date.UTC remaps integer years 0..99 to 1900..1999 (legacy); >=100 literal.
+  -- jsonata's parseDateTime inherits this via its Date.UTC calls.
+  if components.Y ~= nil and components.Y >= 0 and components.Y <= 99 then
+    components.Y = components.Y + 1900
+  end
   if dateB then
     local firstJan = components_to_millis(components.Y, 0, 1, 0, 0, 0, 0)
     local derived = millis_to_components(firstJan + (components.d - 1) * MILLIS_IN_A_DAY)
