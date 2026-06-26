@@ -54,3 +54,21 @@ describe("toPrecision(15) rounds half away from zero (JS), not half-even", funct
     end)
   end
 end)
+
+describe("$string non-finite + functions + embedded rounding", function()
+  it("non-finite number -> D3001", function()
+    local ok, err = pcall(run, "$string(1/0)")
+    assert.is_false(ok)
+    assert.are.equal("D3001", err.code)
+  end)
+  it("function/lambda -> empty string", function()
+    assert.are.equal("", run("$string($sum)"))
+    assert.are.equal("", run("$string(function($x){$x})"))
+  end)
+  it("compact object serialization rounds embedded non-integers", function()
+    assert.are.equal(
+      '{"string":"hello","number":39.4,"null":null,"boolean":false}',
+      run('$string({ "string": "hello", "number": 78.8 / 2, "null": null, "boolean": false })')
+    )
+  end)
+end)

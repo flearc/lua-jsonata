@@ -8,6 +8,10 @@ local function to_string(x)
   if V.is_nothing(x) then
     return ""
   end
+  -- functions/lambdas -> "" (matches jsonata: isFunction(arg) -> '')
+  if type(x) == "table" and (x._jsonata_function or x._jsonata_lambda) then
+    return ""
+  end
   if V.is_null(x) then
     return "null"
   end
@@ -17,6 +21,9 @@ local function to_string(x)
   elseif t == "boolean" then
     return x and "true" or "false"
   elseif t == "number" then
+    if x == math.huge or x == -math.huge or x ~= x then
+      H.err("D3001", { value = x })
+    end
     return H.num_to_str(x)
   end
   -- arrays/objects: JSON serialization
