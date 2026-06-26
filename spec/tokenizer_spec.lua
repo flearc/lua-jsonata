@@ -27,6 +27,12 @@ describe("tokenizer", function()
     assert.are.equal("c", t[2].value)
   end)
 
+  it("combines unicode surrogate-pair escapes into one codepoint", function()
+    local t = tokens([["\uD834\uDD1E"]])
+    assert.are.equal("string", t[1].type)
+    assert.are.equal("𝄞", t[1].value)
+  end)
+
   it("tokenizes names, backtick names and variables", function()
     local t = tokens("foo `b c` $x $")
     assert.are.equal("name", t[1].type)

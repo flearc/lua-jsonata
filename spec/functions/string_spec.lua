@@ -8,6 +8,11 @@ describe("string functions", function()
     assert.is_true(V.is_nothing(F.length.impl(V.NOTHING)))
   end)
 
+  it("$length counts a unicode surrogate-pair escape as one code point", function()
+    local jsonata = require("jsonata")
+    assert.are.equal(1, jsonata.compile([[$length("\uD834\uDD1E")]]):evaluate())
+  end)
+
   it("$substring with start/length and negatives", function()
     assert.are.equal("ell", F.substring.impl("hello", 1, 3))
     assert.are.equal("lo", F.substring.impl("hello", -2))
