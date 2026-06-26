@@ -346,7 +346,7 @@ local function analyse_datetime_picture(picture)
           end
           def.integerFormat = FI.analyse(integerPattern)
           if def.width and def.width.min ~= nil then
-            if def.integerFormat.mandatoryDigits < def.width.min then
+            if def.integerFormat.mandatoryDigits ~= nil and def.integerFormat.mandatoryDigits < def.width.min then
               def.integerFormat.mandatoryDigits = def.width.min
             end
           end
@@ -356,7 +356,7 @@ local function analyse_datetime_picture(picture)
               def.n = def.width.max
               def.integerFormat.mandatoryDigits = def.n
             else
-              local w = def.integerFormat.mandatoryDigits + def.integerFormat.optionalDigits
+              local w = (def.integerFormat.mandatoryDigits or 0 / 0) + (def.integerFormat.optionalDigits or 0 / 0)
               if w >= 2 then
                 def.n = w
               end
