@@ -68,6 +68,26 @@ describe("evaluator: literals and arithmetic", function()
   end)
 end)
 
+describe("evaluator: comments and keyword-like field names", function()
+  it("ignores block comments between tokens", function()
+    assert.are.equal(2, eval("/* header comment */ 1 + 1"))
+    assert.are.equal("Hello", eval([[$substring('Hello, world', 0 /* start at index 0 */, 5/*length*/)]]))
+  end)
+
+  it("allows boolean operator words as field names in operand positions", function()
+    local data = { ["and"] = 1, ["or"] = 2 }
+    assert.is_true(eval_data("and=1 and or=2", data))
+    assert.is_true(eval_data("and>1 or or<=2", data))
+    assert.is_false(eval_data("and>1 or or!=2", data))
+    assert.is_true(eval_data("and and and", data))
+  end)
+
+  it("allows in as a field name beside the inclusion operator", function()
+    assert.is_true(eval_data('in in ["hello", "world"]', { ["in"] = "hello" }))
+    assert.is_true(eval_data('"world" in in', { ["in"] = { "hello", "world" } }))
+  end)
+end)
+
 describe("evaluator: names and paths", function()
   it("selects a field by name", function()
     assert.are.equal("Bob", eval_data("name", { name = "Bob" }))
