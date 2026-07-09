@@ -3,6 +3,7 @@ local errors = require("jsonata.errors")
 local M = {}
 local Tokenizer = {}
 Tokenizer.__index = Tokenizer
+local operand_expected
 
 local KEYWORDS = {
   ["true"] = true,
@@ -59,6 +60,12 @@ function Tokenizer:_skip_ws()
     local c = self:_peek()
     if c == " " or c == "\t" or c == "\n" or c == "\r" then
       self.pos = self.pos + 1
+    elseif c == "/" and self.src:sub(self.pos + 1, self.pos + 1) == "*" then
+      local finish = self.src:find("*/", self.pos + 2, true)
+      if not finish then
+        errors.raise("S0201", { position = self.pos, token = "/*" })
+      end
+      self.pos = finish + 2
     else
       break
     end
@@ -178,6 +185,9 @@ function Tokenizer:_next_raw()
     local name = self.src:match("^[%a_][%w_]*", self.pos)
     self.pos = self.pos + #name
     if KEYWORDS[name] then
+      if (name == "and" or name == "or" or name == "in") and operand_expected(self._prev) then
+        return { type = "name", value = name, position = start }
+      end
       return { type = "keyword", value = name, position = start }
     end
     return { type = "name", value = name, position = start }
@@ -202,7 +212,7 @@ end
 
 -- A `/` is a regex when an operand is expected, division when a value precedes.
 local VALUE_END_KEYWORDS = { ["true"] = true, ["false"] = true, ["null"] = true }
-local function operand_expected(prev)
+function operand_expected(prev)
   if prev == nil then
     return true
   end
