@@ -137,6 +137,10 @@ describe("higher-order: $sort", function()
     assert.are.same({ 1, 3, 11, 22 }, run("$sort([1,3,22,11])"))
   end)
 
+  it("$sort does not mutate the context array", function()
+    assert.are.same({ { 1, 3, 2 }, { 1, 2, 3 }, { 1, 3, 2 } }, run("[[$], [$sort($)], [$]]", { 1, 3, 2 }))
+  end)
+
   it("sorts strings ascending", function()
     assert.are.same({ "apple", "banana", "cherry" }, run([[$sort(["banana","apple","cherry"])]]))
   end)
