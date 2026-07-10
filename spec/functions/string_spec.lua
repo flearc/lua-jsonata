@@ -37,6 +37,11 @@ describe("string functions", function()
     assert.are.equal("ab", F.pad.impl("ab", 1))
   end)
 
+  it("$pad truncates decimal widths toward zero", function()
+    assert.are.equal("foo  ", F.pad.impl("foo", 5.7, " "))
+    assert.are.equal("  foo", F.pad.impl("foo", -5.7, " "))
+  end)
+
   it("$contains (string), $split (string), $join", function()
     assert.is_true(F.contains.impl("hello", "ell"))
     assert.is_false(F.contains.impl("hello", "z"))

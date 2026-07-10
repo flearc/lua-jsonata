@@ -144,7 +144,7 @@ R.pad = H.def(function(s, width, char)
     return V.NOTHING
   end
   char = (char == nil or V.is_nothing(char) or char == "") and " " or char
-  width = math.floor(width)
+  width = width < 0 and math.ceil(width) or math.floor(width)
   local len = H.utf8_len(s)
   local need = math.abs(width) - len
   if need <= 0 then
