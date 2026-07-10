@@ -5,6 +5,7 @@ local ERROR_MT = { __name = "jsonata.error" }
 -- Message templates for the M1 starter subset. Extended in later milestones.
 local MESSAGES = {
   -- Syntax errors
+  S0102 = "Number out of range",
   S0201 = "Syntax error",
   S0203 = "Expected token before end of expression",
   S0211 = "The symbol cannot be used as a unary operator",

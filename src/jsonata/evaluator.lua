@@ -37,6 +37,13 @@ local function is_integer(x)
   return V.typeof(x) == "number" and x == math.floor(x)
 end
 
+local function check_finite_number(x)
+  if x == math.huge or x == -math.huge or x ~= x then
+    errors.raise("D1001", { value = x })
+  end
+  return x
+end
+
 local function eval_binary(node, input, env)
   local op = node.value
   if op == "and" then
@@ -79,15 +86,15 @@ local function eval_binary(node, input, env)
     local a = lhs
     local b = rhs
     if op == "+" then
-      return a + b
+      return check_finite_number(a + b)
     elseif op == "-" then
-      return a - b
+      return check_finite_number(a - b)
     elseif op == "*" then
-      return a * b
+      return check_finite_number(a * b)
     elseif op == "/" then
       return a / b
     else
-      return a % b
+      return check_finite_number(a % b)
     end
   end
 

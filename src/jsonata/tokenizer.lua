@@ -158,7 +158,11 @@ function Tokenizer:_next_raw()
     end
     local num = self.src:sub(s, s + len - 1)
     self.pos = s + len
-    return { type = "number", value = tonumber(num), position = start }
+    local value = tonumber(num)
+    if value == math.huge or value == -math.huge or value ~= value then
+      errors.raise("S0102", { position = start, value = num })
+    end
+    return { type = "number", value = value, position = start }
   end
 
   -- variables

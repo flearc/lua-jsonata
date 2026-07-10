@@ -39,6 +39,12 @@ describe("evaluator: literals and arithmetic", function()
     assert.are.equal(2, eval("8 % 3"))
   end)
 
+  it("raises D1001 for non-finite arithmetic results", function()
+    local ok, err = pcall(eval, "1/(10e300 * 10e100)")
+    assert.is_false(ok)
+    assert.are.equal("D1001", err.code)
+  end)
+
   it("evaluates comparison and boolean", function()
     assert.are.equal(true, eval("3 > 2"))
     assert.are.equal(false, eval("3 = 2"))
