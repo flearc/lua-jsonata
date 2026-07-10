@@ -29,6 +29,11 @@ local function is_array_shape(t)
   return true
 end
 
+local function lua_key_order(t)
+  local mt = getmetatable(t)
+  return mt and mt.__jsonata_key_order or nil
+end
+
 function M.from_lua(x)
   if x == nil then
     return V.NOTHING
@@ -52,8 +57,20 @@ function M.from_lua(x)
     return arr
   end
   local obj = V.object()
+  local order = lua_key_order(x)
+  local seen = {}
+  if order then
+    for _, k in ipairs(order) do
+      if x[k] ~= nil then
+        seen[k] = true
+        V.obj_set(obj, k, M.from_lua(x[k]))
+      end
+    end
+  end
   for k, val in pairs(x) do
-    V.obj_set(obj, k, M.from_lua(val))
+    if not seen[k] then
+      V.obj_set(obj, k, M.from_lua(val))
+    end
   end
   return obj
 end

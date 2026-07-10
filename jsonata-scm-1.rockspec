@@ -15,6 +15,7 @@ dependencies = {
 }
 test_dependencies = {
   "busted",
+  "dkjson",
 }
 build = {
   type = "builtin",
