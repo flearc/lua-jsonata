@@ -394,6 +394,63 @@ R.join = H.def(function(arr, sep)
   return table.concat(parts, sep)
 end, 1, 2, "<a<s>s?:s>")
 
+local BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local BASE64_INDEX = {}
+for i = 1, #BASE64_ALPHABET do
+  BASE64_INDEX[BASE64_ALPHABET:sub(i, i)] = i - 1
+end
+
+local function base64_encode(s)
+  local out = {}
+  local i = 1
+  while i <= #s do
+    local b1 = s:byte(i)
+    local b2 = s:byte(i + 1)
+    local b3 = s:byte(i + 2)
+    local n = b1 * 0x10000 + (b2 or 0) * 0x100 + (b3 or 0)
+    out[#out + 1] = BASE64_ALPHABET:sub(math.floor(n / 0x40000) % 64 + 1, math.floor(n / 0x40000) % 64 + 1)
+    out[#out + 1] = BASE64_ALPHABET:sub(math.floor(n / 0x1000) % 64 + 1, math.floor(n / 0x1000) % 64 + 1)
+    out[#out + 1] = b2 and BASE64_ALPHABET:sub(math.floor(n / 0x40) % 64 + 1, math.floor(n / 0x40) % 64 + 1) or "="
+    out[#out + 1] = b3 and BASE64_ALPHABET:sub(n % 64 + 1, n % 64 + 1) or "="
+    i = i + 3
+  end
+  return table.concat(out)
+end
+
+local function base64_decode(s)
+  local clean = s:gsub("%s+", "")
+  local out = {}
+  for i = 1, #clean, 4 do
+    local c1, c2, c3, c4 = clean:sub(i, i), clean:sub(i + 1, i + 1), clean:sub(i + 2, i + 2), clean:sub(i + 3, i + 3)
+    local n1, n2 = BASE64_INDEX[c1], BASE64_INDEX[c2]
+    local n3 = c3 == "=" and 0 or BASE64_INDEX[c3]
+    local n4 = c4 == "=" and 0 or BASE64_INDEX[c4]
+    local n = n1 * 0x40000 + n2 * 0x1000 + n3 * 0x40 + n4
+    out[#out + 1] = string.char(math.floor(n / 0x10000) % 0x100)
+    if c3 ~= "=" then
+      out[#out + 1] = string.char(math.floor(n / 0x100) % 0x100)
+    end
+    if c4 ~= "=" then
+      out[#out + 1] = string.char(n % 0x100)
+    end
+  end
+  return table.concat(out)
+end
+
+R.base64encode = H.def(function(s)
+  if s == nil or V.is_nothing(s) then
+    return V.NOTHING
+  end
+  return base64_encode(s)
+end, 1, 1, "<s-:s>")
+
+R.base64decode = H.def(function(s)
+  if s == nil or V.is_nothing(s) then
+    return V.NOTHING
+  end
+  return base64_decode(s)
+end, 1, 1, "<s-:s>")
+
 -- Percent-encode every byte not in `unreserved`.
 local function percent_encode(s, unreserved)
   return (s:gsub("[^" .. unreserved .. "]", function(c)
@@ -401,10 +458,58 @@ local function percent_encode(s, unreserved)
   end))
 end
 
+local function is_valid_utf8(s)
+  local i, n = 1, #s
+  while i <= n do
+    local b1 = s:byte(i)
+    local len, cp
+    if b1 < 0x80 then
+      len, cp = 1, b1
+    elseif b1 >= 0xC2 and b1 <= 0xDF then
+      len, cp = 2, b1 - 0xC0
+    elseif b1 >= 0xE0 and b1 <= 0xEF then
+      len, cp = 3, b1 - 0xE0
+    elseif b1 >= 0xF0 and b1 <= 0xF4 then
+      len, cp = 4, b1 - 0xF0
+    else
+      return false
+    end
+    if i + len - 1 > n then
+      return false
+    end
+    for j = 2, len do
+      local b = s:byte(i + j - 1)
+      if b < 0x80 or b > 0xBF then
+        return false
+      end
+      cp = cp * 0x40 + (b - 0x80)
+    end
+    if (len == 3 and cp < 0x800) or (len == 4 and (cp < 0x10000 or cp > 0x10FFFF)) then
+      return false
+    end
+    if cp >= 0xD800 and cp <= 0xDFFF then
+      return false
+    end
+    i = i + len
+  end
+  return true
+end
+
+local function malformed_url(fname, value)
+  H.err("D3140", { functionName = fname, value = value })
+end
+
 local function percent_decode(s)
-  return (s:gsub("%%(%x%x)", function(hex)
+  if s:find("%%[^%x]") or s:find("%%$") or s:find("%%[%x]$") then
+    return nil
+  end
+  local decoded = s:gsub("%%(%x%x)", function(hex)
     return string.char(tonumber(hex, 16))
-  end))
+  end)
+  if not is_valid_utf8(decoded) then
+    return nil
+  end
+  return decoded
 end
 
 -- Component: encode everything except RFC3986 unreserved.
@@ -430,14 +535,22 @@ R.decodeUrlComponent = H.def(function(s)
   if V.is_nothing(s) then
     return V.NOTHING
   end
-  return percent_decode(s)
+  local decoded = percent_decode(s)
+  if decoded == nil then
+    malformed_url("decodeUrlComponent", s)
+  end
+  return decoded
 end, 1, 1, "<s-:s>")
 
 R.decodeUrl = H.def(function(s)
   if V.is_nothing(s) then
     return V.NOTHING
   end
-  return percent_decode(s)
+  local decoded = percent_decode(s)
+  if decoded == nil then
+    malformed_url("decodeUrl", s)
+  end
+  return decoded
 end, 1, 1, "<s-:s>")
 
 return R
