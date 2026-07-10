@@ -20,6 +20,12 @@ describe("tokenizer", function()
     assert.are.equal(42, t[1].value)
   end)
 
+  it("raises S0102 for non-finite number literals", function()
+    local ok, err = pcall(tokens, "10e1000")
+    assert.is_false(ok)
+    assert.are.equal("S0102", err.code)
+  end)
+
   it("tokenizes double and single quoted strings with escapes", function()
     local t = tokens([["a\nb" 'c']])
     assert.are.equal("string", t[1].type)
