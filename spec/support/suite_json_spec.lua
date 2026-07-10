@@ -19,6 +19,13 @@ describe("suite_json", function()
     assert.are.equal(1, o.b[1])
   end)
 
+  it("preserves object key order through evaluation", function()
+    local jsonata = require("jsonata")
+    local data = json.decode([[{"books":1,"loans":2,"customers":3}]])
+    local r = jsonata.compile("$keys($)"):evaluate(data)
+    assert.are.same({ "books", "loans", "customers" }, r)
+  end)
+
   it("NULL marker round-trips as input to the library", function()
     local jsonata = require("jsonata")
     local data = json.decode([[{"x":null}]])

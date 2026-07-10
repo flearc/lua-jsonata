@@ -31,9 +31,10 @@ jobs:
       - name: Install the LuaJIT interpreter + PCRE2
         run: sudo apt-get update && sudo apt-get install -y luajit libpcre2-dev
 
-      - name: Install dev dependencies (busted, lua-cjson, lrexlib-pcre2)
+      - name: Install dev dependencies (busted, dkjson, lua-cjson, lrexlib-pcre2)
         run: |
           luarocks install busted
+          luarocks install dkjson
           luarocks install lua-cjson
           luarocks install lrexlib-pcre2
 
