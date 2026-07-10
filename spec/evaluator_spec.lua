@@ -99,6 +99,11 @@ describe("evaluator: names and paths", function()
     assert.are.equal("Bob", eval_data("name", { name = "Bob" }))
   end)
 
+  it("selects unicode field names", function()
+    assert.are.equal("Steve", eval_data("敷", { ["敷"] = "Steve" }))
+    assert.are.equal("/ˈspænɪʃ/", eval_data("Español", { ["Español"] = "/ˈspænɪʃ/" }))
+  end)
+
   it("navigates nested paths", function()
     assert.are.equal(10, eval_data("a.b.c", { a = { b = { c = 10 } } }))
   end)

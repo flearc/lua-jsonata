@@ -51,6 +51,14 @@ describe("tokenizer", function()
     assert.are.equal("", t[4].value)
   end)
 
+  it("tokenizes unicode field names", function()
+    local t = tokens("敷 Español")
+    assert.are.equal("name", t[1].type)
+    assert.are.equal("敷", t[1].value)
+    assert.are.equal("name", t[2].type)
+    assert.are.equal("Español", t[2].value)
+  end)
+
   it("tokenizes multi-char and single-char operators", function()
     local t = tokens(":= != <= >= . [ ] + &")
     local kinds = {}
