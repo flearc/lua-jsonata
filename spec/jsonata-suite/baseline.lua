@@ -1536,6 +1536,8 @@ return {
   ["transform/case025"] = true,
   ["transform/case026"] = true,
   ["transform/case027"] = true,
+  ["transform/case028"] = true,
+  ["transform/case029"] = true,
   ["transform/case030"] = true,
   ["transform/case031"] = true,
   ["transform/case032"] = true,

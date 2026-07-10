@@ -47,6 +47,30 @@ local function utf8_from_codepoint(code)
   )
 end
 
+local function is_name_start_byte(b)
+  return b == 95 or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b >= 0x80
+end
+
+local function is_name_continue_byte(b)
+  return is_name_start_byte(b) or (b >= 48 and b <= 57)
+end
+
+local function read_name(src, pos)
+  local b = src:byte(pos)
+  if not b or not is_name_start_byte(b) then
+    return nil
+  end
+  local i = pos + 1
+  while i <= #src do
+    b = src:byte(i)
+    if not b or not is_name_continue_byte(b) then
+      break
+    end
+    i = i + 1
+  end
+  return src:sub(pos, i - 1)
+end
+
 function M.new(source)
   return setmetatable({ src = source, pos = 1, len = #source, _prev = nil }, Tokenizer)
 end
@@ -185,8 +209,8 @@ function Tokenizer:_next_raw()
   end
 
   -- names / keywords
-  if c:match("[%a_]") then
-    local name = self.src:match("^[%a_][%w_]*", self.pos)
+  local name = read_name(self.src, self.pos)
+  if name then
     self.pos = self.pos + #name
     if KEYWORDS[name] then
       if (name == "and" or name == "or" or name == "in") and operand_expected(self._prev) then
