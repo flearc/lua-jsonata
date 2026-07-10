@@ -9,6 +9,7 @@ local MESSAGES = {
   S0201 = "Syntax error",
   S0203 = "Expected token before end of expression",
   S0211 = "The symbol cannot be used as a unary operator",
+  S0213 = "The literal value {{value}} cannot be used as a step within a path expression",
   S0214 = "The right side of the {{token}} operator must be a variable name",
   S0215 = "A context variable binding must precede any predicates on a step in a path expression",
   S0216 = "A context variable binding must precede the order-by clause on a step in a path expression",

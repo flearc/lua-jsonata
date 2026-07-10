@@ -196,7 +196,16 @@ infixr(":=", 10, "bind")
 symbol(">>")
 
 -- Path operator: build a temporary binary "." node; processAST flattens it.
-infix(".", 75)
+do
+  local s = symbol(".", 75)
+  s.led = function(p, t, left)
+    local rhs = p.expression(75)
+    if rhs.type == "number" then
+      errors.raise("S0213", { value = rhs.value, position = rhs.position })
+    end
+    return { type = "binary", value = ".", lhs = left, rhs = rhs, position = t.position }
+  end
+end
 
 -- Parentheses: grouping / block
 do

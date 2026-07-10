@@ -95,6 +95,12 @@ describe("parser: paths", function()
     assert.are.equal("variable", ast.steps[1].type)
     assert.are.equal("name", ast.steps[2].type)
   end)
+
+  it("rejects numeric path steps after dot", function()
+    local ok, err = pcall(parser.parse, "$.7")
+    assert.is_false(ok)
+    assert.are.equal("S0213", err.code)
+  end)
 end)
 
 describe("parser: constructors and predicates", function()

@@ -1507,6 +1507,7 @@ return {
   ["token-conversion/case000"] = true,
   ["token-conversion/case001"] = true,
   ["token-conversion/case002"] = true,
+  ["token-conversion/case003"] = true,
   ["transform/case000"] = true,
   ["transform/case001"] = true,
   ["transform/case002"] = true,
