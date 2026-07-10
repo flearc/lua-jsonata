@@ -779,6 +779,7 @@ return {
   ["function-pad/case009"] = true,
   ["function-pad/case010"] = true,
   ["function-pad/case011"] = true,
+  ["function-pad/case012"] = true,
   ["function-parseInteger/parseInteger/0"] = true,
   ["function-parseInteger/parseInteger/1"] = true,
   ["function-parseInteger/parseInteger/10"] = true,
