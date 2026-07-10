@@ -21,6 +21,16 @@ describe("numeric functions", function()
     assert.are.equal(3, F.sqrt.impl(9))
   end)
 
+  it("$power raises D3061 for non-finite results", function()
+    local ok_nan, err_nan = pcall(F.power.impl, -2, 1 / 3)
+    assert.is_false(ok_nan)
+    assert.are.equal("D3061", err_nan.code)
+
+    local ok_inf, err_inf = pcall(F.power.impl, 100, 1000)
+    assert.is_false(ok_inf)
+    assert.are.equal("D3061", err_inf.code)
+  end)
+
   it("$formatBase", function()
     assert.are.equal("ff", F.formatBase.impl(255, 16))
     assert.are.equal("101", F.formatBase.impl(5, 2))

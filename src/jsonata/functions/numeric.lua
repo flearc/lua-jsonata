@@ -72,7 +72,11 @@ R.power = H.def(function(base, exp)
   if num_guard(base) or num_guard(exp) then
     return V.NOTHING
   end
-  return base ^ exp
+  local result = base ^ exp
+  if result ~= result or result == math.huge or result == -math.huge then
+    H.err("D3061", { value = result })
+  end
+  return result
 end, 2, 2, "<n-n:n>")
 
 R.sqrt = H.def(function(x)

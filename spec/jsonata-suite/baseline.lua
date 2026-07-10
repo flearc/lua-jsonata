@@ -846,6 +846,8 @@ return {
   ["function-power/case002"] = true,
   ["function-power/case003"] = true,
   ["function-power/case004"] = true,
+  ["function-power/case005"] = true,
+  ["function-power/case006"] = true,
   ["function-replace/case000"] = true,
   ["function-replace/case001"] = true,
   ["function-replace/case002"] = true,
